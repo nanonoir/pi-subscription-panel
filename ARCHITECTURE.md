@@ -17,6 +17,12 @@ reported percentages. A Claude Code adapter observes ordinary response metadata
 synchronously and may return no update. Only polling-capable provider contracts
 expose `refresh()`. No acquisition, scheduling, or new UI is implemented by this module.
 
+`extensions/provider-adapters.ts` adds pure Claude Code response parsing,
+Antigravity report parsing, partial-observation merging, and age/staleness
+projection. It has no subprocess or network execution and is not imported by the
+entry point yet. Claude diagnostics are checked against the actual assistant
+provider; missing data cannot refresh another window's provenance.
+
 ## Target versus current
 
 The [PRD](docs/PRD.md) describes future adapters, interactive provider sections, settings, and refresh hardening. These are target requirements, not the current architecture. The [development guide](docs/DEVELOPMENT.md) records baseline limitations and the manual TUI smoke procedure.

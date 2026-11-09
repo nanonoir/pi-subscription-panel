@@ -27,8 +27,10 @@ infer MIT, public-domain status, or unrestricted rights from that absence.
 
 - Owner approval and availability of the final npm name (local working name:
   `pi-subscription-panel`). `private: true` currently blocks npm publication.
-- New repository owner/URL, homepage, and issue tracker. No Git remote is configured;
-  inherited project-ownership URLs were removed from package metadata.
+- The independent repository is now
+  [nanonoir/pi-subscription-panel](https://github.com/nanonoir/pi-subscription-panel).
+  Package repository/homepage/issue URLs still need reconciliation before release;
+  inherited project-ownership URLs were removed during foundation work.
 - Permission evidence, npm distribution scope, and applicable license.
 - Authorized release automation and release preparation in Phase 5. This project's
   initial development version is 0.1.0, separate from upstream's 1.0.2 baseline;
