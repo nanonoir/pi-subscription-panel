@@ -39,7 +39,10 @@
 
 ## 3. Target UI and behavior
 
-The Pi Atelier sidebar should include a **Subscriptions** area containing three sections, independently expandable/collapsible:
+The Pi Atelier sidebar should show **Subscriptions** as three contributed provider
+panels with independently expandable/collapsible details. The owner approved
+command/menu controls instead of clickable headings: the quota view stays visible
+without running a command; `/subscriptions` is only an optional interaction control.
 
 - **Codex** — collapsed heading: provider name + concise quota summary if available. Expanded: 5h / 1w bars, remaining percentage, reset countdown, freshness.
 - **Claude Code** — same behavior; display `Unavailable` or `Awaiting usage data` when no supported read-only source exists.
@@ -55,6 +58,9 @@ Requirements:
 6. Each provider shows the age of its last successful reading; stale data must be marked.
 7. Avoid overflowing narrow sidebars. Honor Atelier layout limits and resizing; no unsolicited global keyboard shortcuts.
 8. Do not assume `registerSidebarPanel()` provides clickable rows. Investigate actual API, keyboard routing and event registration before choosing accordion implementation.
+9. Preserve Atelier Settings → Display as the authority for panel visibility/order.
+   New contributions may need enabling there once; do not silently rewrite Atelier
+   settings. Once enabled, viewing quotas requires no `/subscriptions` invocation.
 
 ### Accordion feasibility gate
 
@@ -67,6 +73,14 @@ B. Three separate contributed provider panels controlled by an explicit Pi comma
 C. A small upstream-compatible Atelier API contribution (preferred if clickable accordion is mandatory and impossible through public APIs).
 
 **Acceptance rule:** Do not claim clickable accordion completion if only hide/show commands or static indicators work. Record the trade-off; obtain approval before modifying or forking Atelier. Preserve the global ability to hide/reorder panels in Atelier Settings → Display.
+
+**Owner-approved resolution:** static inspection of Atelier 0.16.0 and the installed
+0.18.0 found presentation-only contributions, without public input callbacks.
+Proceed with option B using `/subscriptions` menu/direct controls, not a clickable
+accordion and not panel unregistration. Collapsed headings and summaries remain
+visible; toggling only changes detail rendering and persisted expansion preferences.
+No Atelier fork/patch is authorized. A real TUI spike must still prove this interaction
+before it is claimed complete. See [feasibility evidence](references/atelier-feasibility.md).
 
 ## 4. Provider integrations
 

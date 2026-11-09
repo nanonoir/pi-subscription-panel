@@ -23,6 +23,13 @@ while iterating where supported by your Pi version. Never send a prompt just to 
 
 ## Architecture and boundaries
 
+The Phase 3 pure adapters are tested but **not wired into the running panel yet**.
+`extensions/provider-adapters.ts` parses ordinary Claude Code response metadata
+and Antigravity usage reports without I/O, and preserves per-window observation
+age during partial updates. `test/provider-adapters.test.cjs` exercises these
+boundaries using synthetic payloads. CLI transport, presentation, and scheduling
+are separate delivery units; current user-visible support remains the baseline.
+
 | Location                                                          | Responsibility                                                                                                               |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `extensions/index.ts`                                             | Existing parsers, OAuth-backed read-only usage calls, refresh loop, response events, panel registration, diagnostic command. |

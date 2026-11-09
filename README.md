@@ -41,8 +41,9 @@ manually copied entry point. They share the preserved `subscription:limits` pane
 id. Review `pi list` / `pi config` before enabling a duplicate.
 
 This is an unpublished development package (`0.1.0`), marked private.
-The final npm name and repository URL are not confirmed; no npm or GitHub install
-source is advertised for this project yet.
+The final npm name is not confirmed; no npm install source is advertised yet.
+Source is available at [nanonoir/pi-subscription-panel](https://github.com/nanonoir/pi-subscription-panel);
+the commands above install from your local checkout.
 
 ## Data sources and limitations
 
