@@ -5,16 +5,16 @@ replace, or reauthenticate model providers for this phase. Start with [the READM
 
 ## Commands
 
-| Command                                                       | Purpose                                                           |
-| ------------------------------------------------------------- | ----------------------------------------------------------------- |
-| `npm ci`                                                      | Reproduce the checked-in dependency tree.                         |
-| `npm run typecheck`                                           | Check extension types without emitting files.                     |
-| `npm run lint`                                                | Check TypeScript, JavaScript, and tests.                          |
-| `npm test`                                                    | Run the ten fast, mocked Node unit tests; no provider HTTP calls. |
-| `node --test --test-name-pattern="Codex" test/usage.test.cjs` | Run a focused subset.                                             |
-| `npm run format:check`                                        | Verify formatting, including docs and CI files.                   |
-| `npm run check`                                               | Run formatting, lint, types, and baseline unit tests.             |
-| `npx --no-install prettier --write <file>`                    | Format an edited file using the installed formatter.              |
+| Command                                                       | Purpose                                                       |
+| ------------------------------------------------------------- | ------------------------------------------------------------- |
+| `npm ci`                                                      | Reproduce the checked-in dependency tree.                     |
+| `npm run typecheck`                                           | Check extension types without emitting files.                 |
+| `npm run lint`                                                | Check TypeScript, JavaScript, and tests.                      |
+| `npm test`                                                    | Run fast baseline and contract tests; no provider HTTP calls. |
+| `node --test --test-name-pattern="Codex" test/usage.test.cjs` | Run a focused subset.                                         |
+| `npm run format:check`                                        | Verify formatting, including docs and CI files.               |
+| `npm run check`                                               | Run formatting, lint, types, and baseline unit tests.         |
+| `npx --no-install prettier --write <file>`                    | Format an edited file using the installed formatter.          |
 
 There is no build/server step: Pi loads `extensions/index.ts` through `pi.extensions`.
 For a temporary run, use `pi -e ./extensions/index.ts` **instead of** installing/loading
@@ -23,12 +23,14 @@ while iterating where supported by your Pi version. Never send a prompt just to 
 
 ## Architecture and boundaries
 
-| Location                | Responsibility                                                                                                               |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `extensions/index.ts`   | Existing parsers, OAuth-backed read-only usage calls, refresh loop, response events, panel registration, diagnostic command. |
-| `types/pi-atelier.d.ts` | Local declaration for the public Atelier contribution API; it is not runtime code.                                           |
-| `test/usage.test.cjs`   | Transpiles the extension in a VM with mocked Pi, Atelier, fetch, and credentials.                                            |
-| `docs/PRD.md`           | Canonical requirements and phase acceptance gates.                                                                           |
+| Location                                                          | Responsibility                                                                                                               |
+| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `extensions/index.ts`                                             | Existing parsers, OAuth-backed read-only usage calls, refresh loop, response events, panel registration, diagnostic command. |
+| `extensions/quota-contracts.ts`                                   | Standalone quota/adapter contracts and percentage validation; not wired into the runtime yet.                                |
+| `types/pi-atelier.d.ts`                                           | Local declaration for the public Atelier contribution API; it is not runtime code.                                           |
+| `test/usage.test.cjs`                                             | Transpiles the extension in a VM with mocked Pi, Atelier, fetch, and credentials.                                            |
+| `test/quota-contracts.test.cjs` / `test/quota-contracts.types.ts` | Value and compile-time contract tests, including response-only Claude capabilities and per-window provenance.                |
+| `docs/PRD.md`                                                     | Canonical requirements and phase acceptance gates.                                                                           |
 
 Keep the single runtime module until a later phase has a concrete reason to split it.
 Preserve `subscription:limits`, `subscription-limits` source, and `/subscription-debug`
@@ -67,6 +69,12 @@ The baseline queries usage at TUI session start, then approximately every minute
 for Codex and every 30 minutes for native Anthropic. Countdown rendering updates
 locally every minute. HTTP 429 defers retries by at least the normal interval,
 five minutes, and any server-provided `Retry-After`.
+
+This native Anthropic baseline is separate from the **approved, not yet implemented**
+Claude Code behavior: update from every ordinary response carrying valid quota
+metadata, with no extra/scheduled query or three-minute throttle. Missing data
+keeps the previous observation's real age; reset countdowns update locally.
+See [the canonical refresh policy](PRD.md#5-refresh-policy) for provider-specific rules.
 
 - Native `anthropic` OAuth reporting is not `pi-claude-code` support. Antigravity is absent.
 - No accordion, persisted preferences, freshness timestamp, activity-aware scheduling,
