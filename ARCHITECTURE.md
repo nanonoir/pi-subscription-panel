@@ -23,6 +23,13 @@ projection. It has no subprocess or network execution and is not imported by the
 entry point yet. Claude diagnostics are checked against the actual assistant
 provider; missing data cannot refresh another window's provenance.
 
+`extensions/antigravity-cli.ts` isolates the opt-in standalone `/usage` transport.
+It uses the existing `AGY_BIN`/PATH selection and inherited environment, with no
+shell, ignored stdin/stderr, a one-MiB stdout cap, and a 35-second watchdog. Failure
+settles without waiting for stream closure, destroys owned stdout, and signals
+only the direct child; shared engines/unknown descendants are never terminated.
+It is disabled by default and not invoked by the entry point or any timer yet.
+
 ## Target versus current
 
 The [PRD](docs/PRD.md) describes future adapters, interactive provider sections, settings, and refresh hardening. These are target requirements, not the current architecture. The [development guide](docs/DEVELOPMENT.md) records baseline limitations and the manual TUI smoke procedure.

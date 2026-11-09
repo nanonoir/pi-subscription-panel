@@ -27,8 +27,11 @@ The Phase 3 pure adapters are tested but **not wired into the running panel yet*
 `extensions/provider-adapters.ts` parses ordinary Claude Code response metadata
 and Antigravity usage reports without I/O, and preserves per-window observation
 age during partial updates. `test/provider-adapters.test.cjs` exercises these
-boundaries using synthetic payloads. CLI transport, presentation, and scheduling
-are separate delivery units; current user-visible support remains the baseline.
+boundaries using synthetic payloads. `extensions/antigravity-cli.ts` adds an explicit,
+default-disabled CLI adapter; `test/antigravity-cli.test.cjs` tests opt-in behavior,
+argv/bounds, sanitized errors, and the production runner with deterministic process
+and timer doubles. No test starts the real CLI. Presentation and scheduling remain
+later work; current user-visible support remains the baseline.
 
 | Location                                                          | Responsibility                                                                                                               |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
