@@ -138,3 +138,13 @@ the still-pending live TUI gate; Phase 5 owns scheduling and cross-session coord
 No automatic CLI refresh is enabled. Claude internal fields remain unverified on a
 live account, and custom environment overrides do not guarantee account identity.
 Existing audit and provenance limitations remain tracked in their canonical documents.
+
+## Delivery follow-up
+
+Unit 3b was subsequently merged as [PR #4](https://github.com/nanonoir/pi-subscription-panel/pull/4)
+at `744666c7032a28698788e18015f362095ea87e35`. GitHub pull-request-title and
+quality checks passed; the independent re-review and parent validation are recorded
+above. The parent switched to `main`, fast-forwarded it, verified a clean working
+tree, and created `feature/subscription-ui-spike`. Phase 3 implementation and both
+deliveries are complete; the production entrypoint remains unchanged. Phase 4's
+live TUI gate remains pending.
