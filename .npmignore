@@ -1,0 +1,16 @@
+.env
+.env.*
+*.swp
+node_modules/
+.pi/
+.npmrc
+*.pem
+*.key
+auth.json
+credentials.json
+coverage/
+dist/
+build/
+.cache/
+*.log
+*.tsbuildinfo
