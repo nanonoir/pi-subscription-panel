@@ -103,8 +103,10 @@ Implementation can improve types after source verification; all percentages must
 ### Claude Code (`pi-claude-code`)
 
 - Inspect the _installed_ extension's exact code, provider id, exposed events and metadata; inspect installed Claude Code CLI's documented usage/status surfaces.
-- Determine whether quota can be obtained passively from normal model responses or via a **read-only** CLI mechanism that does **not** submit prompts or start a paid inference.
-- If a data source requires a separate undocumented OAuth HTTP call, characterize credential access and API risks explicitly and make it optional, rate-limited and opt-in.
+- **Approved refresh behavior:** inspect quota metadata after every ordinary Claude Code response and update each window for which valid reported data is present. Do not throttle these message-driven updates to a three-minute interval: they cause no additional provider request.
+- Use the existing extension's `claude-code.rate-limit` message diagnostic. Its optional internal `unifiedWindows` fields may report actual five-hour/weekly utilization and reset timestamps; the owner accepts this compatibility risk. Validate fields, fail closed on schema changes, and never infer missing percentages from token counts or duplicate the limiting window into both windows.
+- Do not perform scheduled, startup, idle, or background quota queries for Claude Code. No extra CLI invocation, usage-endpoint request, status-line configuration change, or inference probe is authorized by this behavior. A different source requires a new owner decision.
+- Before the first valid reading, show `Awaiting usage data` or unavailable. If a response omits quota metadata or a window, retain the last valid reading for that window, preserve its observation timestamp, and show its age/staleness. No Claude activity means no fresh quota reading. Reset countdowns continue locally without a provider request.
 - Never silently switch to native Pi `anthropic` `/login` or to `pi-claude-bridge`.
 - If no safe compatible signal is found, show a truthful `Unsupported / waiting for data` state and deliver the rest of the extension.
 
@@ -118,15 +120,15 @@ Implementation can improve types after source verification; all percentages must
 
 ## 5. Refresh policy
 
-**Goal:** a visually current dashboard, with a _target_ of 3-minute data freshness during active sessions **where supported**. This is not a guaranteed API request interval. Claude and Antigravity must share one reusable activity-aware scheduling mechanism; each adapter independently decides whether a safe source supports event updates, read-only polling, or neither. Never use inference as a quota probe.
+**Goal:** a visually current dashboard without unnecessary requests. Claude Code is strictly **message-driven**: inspect every ordinary response, without a polling interval or extra quota request. For providers supporting authorized read-only polling, target 3-minute freshness during active sessions **where supported**, not a guaranteed API request interval. Use one reusable activity-aware scheduler for polling-capable adapters; Claude Code must not schedule quota queries through it. Never use inference as a quota probe.
 
 - Update reset countdowns locally every 60 seconds (no network calls).
-- Apply passive updates immediately after ordinary provider responses when credible quota metadata is present.
+- Apply valid quota metadata immediately after every ordinary provider response. For Claude Code this is the only approved acquisition path, with no three-minute throttle; processing a response is not a separate quota query.
 - Use at most one in-flight quota request per provider and coordinate across sessions where practical.
 - Suggested initial **configurable experimental defaults** (subject to adapter/source validation):
   - Codex: 60 seconds while active, or preserve upstream behavior if no issue is observed.
-  - Claude: **3 minutes minimum between active polling attempts** after relevant activity, only if a verified read-only source supports it; **20 minutes while idle** if permitted, or event-only mode.
-  - Antigravity: use the **same activity-aware refresh scheduler as Claude**: **3 minutes minimum between active polling attempts** and **20 minutes while idle**, **only after confirming a safe, read-only quota source and its restrictions**. Until then, operate in event-only mode and show unavailable if necessary. Independent per-provider backoff applies.
+  - Claude Code: **response-event only**. Inspect each normal response; no active/idle polling, startup refresh, or timer-based request. Keep the last reading's actual age when no new quota arrives.
+  - Antigravity: the owner approved **configurable, opt-in** refresh using the existing CLI's standalone `/usage` command following a successful bounded validation. Use the reusable activity-aware scheduler with **3 minutes minimum between active polling attempts** and **20 minutes while idle**, with independent backoff. Each attempt starts a process and contacts the backend; no official safe polling threshold has been established. Keep automatic polling disabled until explicitly opted in; never substitute inference or a different authentication flow.
 - Define activity explicitly (e.g. a turn or relevant provider response within the past 10 minutes); do not reset the polling interval on every UI repaint. The 3-minute value is a **minimum gap**, not permission to query endpoints that do not support polling.
 - Track `lastSuccess`, `lastAttempt`, `nextEligibleRefresh`, `inFlight`, and `lastError` per provider.
 - Respect `Retry-After`, HTTP 429, endpoint-specific backoff, and exponential backoff with jitter for recoverable failures. Never poll faster because of a failure. On 401/403, stop automated retries until user action or credential change.
@@ -146,8 +148,8 @@ Proposed settings (illustrative; not assumed to exist in the current code):
   "expandedProviders": ["codex", "claude-code", "antigravity"],
   "refresh": {
     "codexSeconds": 60,
-    "claude": { "mode": "auto", "activeSeconds": 180, "idleSeconds": 1200 },
-    "antigravity": { "mode": "auto", "activeSeconds": 180, "idleSeconds": 1200 }
+    "claude": { "mode": "response-event" },
+    "antigravity": { "mode": "off", "activeSeconds": 180, "idleSeconds": 1200 }
   }
 }
 ```
@@ -230,4 +232,4 @@ Suggested commit: `chore: initialize subscription panel from authorized upstream
 - Claude refresh example: https://github.com/yasuhito/pi-usage
 - Official Pi documentation: https://pi.dev/
 
-**Important:** Antigravity bridge package identity must be confirmed from the user's installed Pi packages in Phase 2 before linking a specific repository or assuming its capabilities.
+**Discovery:** Phase 2 confirmed the installed `@estebanforge/pi-antigravity-bridge` package and validated one standalone CLI quota check. See [provider discovery](references/provider-discovery.md) for exact versions, source evidence, approved behavior, and remaining limitations. Do not assume other Antigravity packages expose the same capabilities.

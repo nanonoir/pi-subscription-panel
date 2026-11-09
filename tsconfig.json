@@ -12,5 +12,5 @@
     },
     "noEmit": true
   },
-  "include": ["extensions/**/*.ts"]
+  "include": ["extensions/**/*.ts", "test/quota-contracts.types.ts"]
 }
