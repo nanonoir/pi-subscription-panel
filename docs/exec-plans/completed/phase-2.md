@@ -102,3 +102,6 @@ live account and TUI behavior were not tested. Existing audit and distribution
 limitations remain tracked in the development guide and provenance. Commit, push,
 PR, CI and merge have not yet occurred; the parent session will handle delivery
 and verify Git state before the next phase.
+
+Subsequently, Phase 2 was merged as [PR #2](https://github.com/nanonoir/pi-subscription-panel/pull/2)
+at `d6997cd` after CI passed.
