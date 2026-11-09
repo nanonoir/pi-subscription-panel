@@ -51,6 +51,10 @@ drift; automated tests mock registration and do not prove live TUI compatibility
 
 ## Manual smoke test (requires the owner's configured TUI)
 
+For the pending Phase 4 command/menu feasibility gate, first use the isolated
+[fictional-data interaction spike](references/atelier-spike.md). It does not run
+the baseline usage calls described below, and no live result has been claimed.
+
 1. Ensure only one copy is loaded; start Pi without changing providers or credentials.
 2. Open `/atelier`, enable **Subscription** in **Settings → Display**, and verify
    Codex/Claude headings, reported used percentages/countdowns, or truthful error labels.
