@@ -36,6 +36,10 @@ and atomically replace a same-directory temporary file. Malformed/unreadable/fut
 schemas are read-only. Atomic replacement is not cross-session transactionality.
 The entry point is not wired to this preferences module yet.
 
+`extensions/quota-format.ts` supplies pure bounded-text, countdown, and freshness
+formatting with caller-provided time and age threshold. It does not fetch data or
+read the clock. Panel assembly and runtime wiring are separate delivery units.
+
 ## Target versus current
 
 The [PRD](docs/PRD.md) describes future adapters, interactive provider sections, settings, and refresh hardening. These are target requirements, not the current architecture. The [development guide](docs/DEVELOPMENT.md) records baseline limitations and the manual TUI smoke procedure.
