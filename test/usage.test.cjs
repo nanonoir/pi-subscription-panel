@@ -1,54 +1,14 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const vm = require("node:vm");
 const { test } = require("node:test");
-const ts = require("typescript");
+const { loadRuntime } = require("./helpers/runtime-loader.cjs");
 
 function loadExtension(options = {}) {
-  const source = fs.readFileSync(
-    path.join(__dirname, "../extensions/index.ts"),
-    "utf8",
-  );
-  const compiled = ts.transpileModule(
-    source +
-      "\nObject.assign(exports, { parseCodexUsage, parseClaudeUsage, usageFromHeaders, mergeUsage, fetchJson, usageFailure, readCodexUsage, readClaudeUsage, buildPanel });",
-    {
-      compilerOptions: {
-        module: ts.ModuleKind.CommonJS,
-        target: ts.ScriptTarget.ES2022,
-      },
-    },
-  ).outputText;
-  const panels = [];
-  const sandbox = {
-    exports: {},
-    Buffer,
-    Date,
-    AbortSignal,
-    DOMException,
-    fetch:
-      options.fetch ??
-      (() => {
-        throw new Error("Unexpected request");
-      }),
-    setInterval: () => ({ unref() {} }),
-    clearInterval() {},
-    require(name) {
-      if (name === "@earendil-works/pi-coding-agent")
-        return { readStoredCredential: () => options.credential };
-      if (name === "pi-atelier/extensions/index.ts")
-        return {
-          registerSidebarPanel: (_pi, panel) => {
-            panels.push(panel);
-            return { update: (value) => panels.push(value), dispose() {} };
-          },
-        };
-      throw new Error(`Unexpected import: ${name}`);
-    },
-  };
-  vm.runInNewContext(compiled, sandbox);
-  return { ...sandbox.exports, panels };
+  const { entry, env } = loadRuntime({
+    ...options,
+    expose:
+      "parseCodexUsage, parseClaudeUsage, usageFromHeaders, mergeUsage, fetchJson, usageFailure, readCodexUsage, readClaudeUsage, buildPanel",
+  });
+  return { ...entry, env };
 }
 
 const plain = (value) => JSON.parse(JSON.stringify(value));
@@ -67,7 +27,7 @@ test("a weekly-only primary window is not also displayed as 5h", () => {
   });
   assert.equal(result.fiveHour, undefined);
   assert.equal(result.weekly.usedPercent, 42);
-  assert.ok(result.weekly.resetsAt > Date.now());
+  assert.ok(result.weekly.resetsAt > extension.env.now);
 });
 
 test("malformed percentages never turn into unused quota; null reset remains usable", () => {
@@ -128,7 +88,7 @@ test("HTTP 429 respects Retry-After and rejects redirects", async () => {
       });
     },
   });
-  const before = Date.now();
+  const before = extension.env.now;
   await assert.rejects(
     extension.fetchJson("https://api.anthropic.com/api/oauth/usage", {}),
     (error) => {

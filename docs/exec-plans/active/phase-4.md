@@ -47,7 +47,7 @@ and unrelated Dependabot work. Do not install packages or generate inference to
 probe quota. Every PR must remain within the delivery size budget and pass
 applicable checks before authorized merge. No costly E2E infrastructure.
 
-## Outcome — blocked on required OpenAI quota source
+## Outcome — quota source verified; production wiring pending
 
 The command/menu interaction gate is satisfied by the owner's screenshot: all
 three TEST panels rendered, with Codex collapsed retaining its heading/summary
@@ -195,3 +195,54 @@ The exact rejection cause is not established. Real Codex percentages/resets rema
 an unmet mandatory requirement, not an approved unavailable fallback. Stop further
 live probing under this permission and retain this plan as blocked/incomplete.
 Evidence and limits are recorded in [provider discovery](../../references/provider-discovery.md).
+
+## Source blocker resolved by explicit owner action
+
+The owner subsequently signed into the official Pi **OpenAI Codex** provider and
+authorized one validation. It returned HTTP 200 with both genuine five-hour/weekly
+quota windows and resets, using only `openai-codex` OAuth plus account metadata
+from that same resolved token. No inference, alternate credential, redirect,
+retry, other CLI, model switch, or agent-created login occurred. Live quota values
+and account IDs are not persisted in project artifacts.
+
+The owner-approved boundary is now: `openai/{model}` for existing model execution;
+the additionally supplied Pi Codex session for read-only quota. The PRD and agent
+map reflect this scope change. The earlier 401 is retained as historical evidence,
+not a current blocker or proof of universal incompatibility.
+
+Proceed with the production runtime unit on `feature/subscription-runtime-wiring`:
+compose the tested controller, observe every normal Claude response, convert actual
+legacy usage updates to per-window observations, preserve native Anthropic support,
+and retain bounded Codex reads with matched account metadata. Remove obsolete
+presentation only as needed; preserve `/subscription-debug`. Antigravity automatic
+scheduling remains a Phase 5 unit and disabled by default. Tests must mock all
+auth/HTTP/file/CLI effects; no further live quota probes are needed.
+
+The initial runtime implementation and real-module-graph integration tests pass
+77 tests but exceed one PR's 600 authored-line budget. Split by behavior, not by
+shipping the runtime without its integration tests: first a pure legacy-update
+conversion boundary with its tests and isolated loader, then actual entry-point
+wiring together with lifecycle/message/command integration regressions. Keep all
+source/auth/parsing coverage and avoid test-only follow-up PRs for new behavior.
+
+Runtime review additionally found header observations could be dropped while the
+controller awaited preferences. Enable the TUI observation path and initialize
+revision/deadline maps before that await so the controller can buffer them; add
+a delayed-start integration regression while preserving polling deadlines.
+
+To keep that necessary regression within budget, include the reusable runtime
+loader migration of baseline tests in the converter/preparation unit, preserving
+all old auth/UI assertions against the old entry point. The final runtime unit
+then changes behavior and retires obsolete UI assertions together with its real
+integration tests. No extra production auth module is needed just to satisfy size.
+
+The corrected PREP variant leaves `index.ts` byte-identical to `e6f0ad2`, migrates
+all ten original usage/auth/UI tests to the isolated loader, and adds only the
+pure conversion boundary plus its test. Its authored size is 287 lines after a
+type-only flat-interface cleanup; 73 tests
+passed. The final wiring is preserved outside the repository under the approved
+temp `opencode/psp-final-variant` directory for restoration after prep delivery.
+Final-over-prep is 583 authored lines, including the delayed-start regression and
+all six real-module-graph integration tests. Independent final review passed both
+variants; 78 final tests passed before the server restart. Revalidate the actual
+restored final tree before delivery. No live quota probe needs repeating.

@@ -10,7 +10,7 @@
 
 ## 1. Product principles
 
-1. **Preserve the working harness.** Do not replace, install, remove, reauthenticate, or modify the existing `openai`, `pi-claude-code`, or Antigravity bridge providers. The owner confirmed `openai/{model}` is canonical; the copied `openai-codex` integration is legacy, not a required login or model namespace.
+1. **Preserve the working harness.** Do not replace, install, remove, reauthenticate, or modify the existing `openai`, `pi-claude-code`, or Antigravity bridge providers. The owner confirmed `openai/{model}` is canonical for model execution and separately supplied an official Pi OpenAI Codex login for quota reads only. Never switch selected models or credential flows to read quotas.
 2. **Read only.** Never write credentials, change selected models, intercept prompts, inject tool calls, or initiate model inference to measure quotas.
 3. **Truthful metrics.** Distinguish reported values from estimates and missing data. Never infer a percentage from token usage or show fabricated zeros.
 4. **Low overhead.** No polling loops that block Pi, no unnecessary processes, and no duplicate requests across active Pi sessions where coordination is feasible.
@@ -21,7 +21,7 @@
 
 ### In scope
 
-- OpenAI/Codex subscription quota associated with the existing Pi `openai/{model}` integration and login. The internal panel/provider ID `codex` is a quota-domain label, not a model-routing namespace.
+- OpenAI/Codex subscription quota through the owner-approved additional Pi `openai-codex` OAuth session, while models keep `openai/{model}`. The internal panel/provider ID `codex` is a quota-domain label, not a model-routing namespace.
 - Claude Code subscription quota using an authorized read-only mechanism associated with the existing `pi-claude-code` / Claude Code CLI installation, **not** native Pi Anthropic OAuth.
 - Google Antigravity quota associated with the **exact installed Antigravity bridge package**, with no replacement provider or authentication flow.
 - Five-hour and weekly windows **when the provider actually reports them**, percent consumed/remaining, reset times, data freshness, and unavailable/error states.
@@ -110,9 +110,9 @@ Implementation can improve types after source verification; all percentages must
 
 ### Codex
 
-- Use the owner's existing canonical Pi `openai` integration. Do not require `openai-codex`, change selected models, create another login, or migrate credentials to make the panel work.
+- Keep the owner's canonical Pi `openai` integration for model execution. The owner explicitly supplied a separate official Pi `openai-codex` session and authorized it as the quota source; one bounded read returned HTTP 200 with real five-hour/weekly values and reset timestamps. Do not create logins, migrate credentials, change selected models, or install another CLI.
 - Retain useful baseline parsing/regression coverage, but do not preserve an incorrect legacy provider requirement in the new runtime. Obtain quota only from verified subscription metadata or a read-only source authorized for the existing login.
-- Correcting the model/provider identity does not by itself authorize sending its credentials to the copied legacy quota endpoint. Verify the source and credential/host boundary before making a request; never infer subscription percentage from API token/request limits.
+- Send only the resolved `openai-codex` OAuth to `https://chatgpt.com/backend-api/wham/usage`, with matching account metadata, redirects rejected, and bounded requests. Never send the direct-sharing `openai` token there: its separately authorized probe returned 401. These observations do not isolate the reason for that rejection. Never infer subscription percentage from API token/request limits.
 - Avoid storing OAuth tokens or account identifiers in panel state.
 
 ### Claude Code (`pi-claude-code`)
@@ -140,6 +140,9 @@ Implementation can improve types after source verification; all percentages must
 - Update reset countdowns locally every 60 seconds (no network calls).
 - Apply valid quota metadata immediately after every ordinary provider response. For Claude Code this is the only approved acquisition path, with no three-minute throttle; processing a response is not a separate quota query.
 - Use at most one in-flight quota request per provider and coordinate across sessions where practical.
+- **Approved coordination scope:** enforce per-process exclusion/cooldowns across
+  extension reloads without sharing quota values or account identifiers. Separate
+  Pi processes may query independently; cross-process deduplication is not claimed.
 - Suggested initial **configurable experimental defaults** (subject to adapter/source validation):
   - Codex: 60 seconds while active, or preserve upstream behavior if no issue is observed.
   - Claude Code: **response-event only**. Inspect each normal response; no active/idle polling, startup refresh, or timer-based request. Keep the last reading's actual age when no new quota arrives.
@@ -147,6 +150,11 @@ Implementation can improve types after source verification; all percentages must
 - Define activity explicitly (e.g. a turn or relevant provider response within the past 10 minutes); do not reset the polling interval on every UI repaint. The 3-minute value is a **minimum gap**, not permission to query endpoints that do not support polling.
 - Track `lastSuccess`, `lastAttempt`, `nextEligibleRefresh`, `inFlight`, and `lastError` per provider.
 - Respect `Retry-After`, HTTP 429, endpoint-specific backoff, and exponential backoff with jitter for recoverable failures. Never poll faster because of a failure. On 401/403, stop automated retries until user action or credential change.
+- **Approved Antigravity failure policy:** when the CLI's failure is indeterminate,
+  pause automatic acquisition until explicit manual retry from `/subscriptions`.
+  Keep last-known readings with age/error; do not infer HTTP codes from CLI text.
+  Manual retry is not a login or inference and must honor minimum gaps and known
+  server deadlines. `/reload`, repaint and expansion do not silently clear blocks.
 - Avoid repeated network requests after `/reload`, model switching, multiple Pi TUI instances or accordion opening.
 - **Do not** represent a private/undocumented endpoint as having an official safe rate-limit threshold; document observed results and use conservative defaults when unknown.
 - A collapsed provider should not trigger extra requests just because it was toggled. Keeping or pausing background refresh while collapsed is configurable and must not be conflated with its expanded state.
