@@ -23,62 +23,62 @@ while iterating where supported by your Pi version. Never send a prompt just to 
 
 ## Architecture and boundaries
 
-The Phase 3 pure adapters are tested but **not wired into the running panel yet**.
-`extensions/provider-adapters.ts` parses ordinary Claude Code response metadata
-and Antigravity usage reports without I/O, and preserves per-window observation
-age during partial updates. `test/provider-adapters.test.cjs` exercises these
-boundaries using synthetic payloads. `extensions/antigravity-cli.ts` adds an explicit,
-default-disabled CLI adapter; `test/antigravity-cli.test.cjs` tests opt-in behavior,
-argv/bounds, sanitized errors, and the production runner with deterministic process
-and timer doubles. No test starts the real CLI. Presentation and scheduling remain
-later work; current user-visible support remains the baseline.
+The production entry point composes the provider panels, preferences and
+`/subscriptions` controls. `extensions/provider-adapters.ts` parses ordinary Claude
+Code response metadata and Antigravity usage reports without I/O, preserving
+per-window observation age during partial updates. `extensions/antigravity-cli.ts`
+provides a default-disabled CLI adapter, but automatic acquisition is not invoked
+before Phase 5. Adapter tests use synthetic payloads and deterministic process and
+timer doubles; no test starts the real CLI.
 
-The pure `quota-presentation.ts` renderer is also tested separately from the entry
-point. It labels used/remaining values, retains independent pool identities and
+The `quota-presentation.ts` renderer labels used/remaining values, retains independent pool identities and
 per-window age, explains missing/non-finite data, and bounds rows to Atelier's
 public limits. Its tests cover actual row truncation preserving the leading
 stale/unknown marker; they do not replace a real narrow-terminal smoke test.
 
-The standalone `subscription-panels.ts` controller composes those foundations.
+The production `subscription-panels.ts` controller composes those foundations.
 Controller tests use real preferences/actions/adapters with injected file access
 and a stubbed host/renderer, covering buffered startup observations, cancelled
-loads, serialized-save/restart ordering, and independent controls. Production
-entry-point wiring and real-renderer integration remain separate validation work.
+loads, serialized-save/restart ordering, and independent controls. Six entry-point
+integration tests exercise the real module graph with mocked external effects and
+fake-file profiles; they do not establish actual TUI behavior.
 
-| Location                                                          | Responsibility                                                                                                               |
-| ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `extensions/index.ts`                                             | Existing parsers, OAuth-backed read-only usage calls, refresh loop, response events, panel registration, diagnostic command. |
-| `extensions/quota-contracts.ts`                                   | Standalone quota/adapter contracts and percentage validation; not wired into the runtime yet.                                |
-| `types/pi-atelier.d.ts`                                           | Local declaration for the public Atelier contribution API; it is not runtime code.                                           |
-| `test/usage.test.cjs`                                             | Transpiles the extension in a VM with mocked Pi, Atelier, fetch, and credentials.                                            |
-| `test/quota-contracts.test.cjs` / `test/quota-contracts.types.ts` | Value and compile-time contract tests, including response-only Claude capabilities and per-window provenance.                |
-| `docs/PRD.md`                                                     | Canonical requirements and phase acceptance gates.                                                                           |
+| Location                                                          | Responsibility                                                                                                          |
+| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `extensions/index.ts`                                             | Runtime composition, OAuth-backed read-only usage calls, baseline refresh loop, response events and diagnostic command. |
+| `extensions/quota-contracts.ts`                                   | Shared quota/adapter contracts and percentage validation.                                                               |
+| `types/pi-atelier.d.ts`                                           | Local declaration for the public Atelier contribution API; it is not runtime code.                                      |
+| `test/usage.test.cjs`                                             | Transpiles the extension in a VM with mocked Pi, Atelier, fetch, and credentials.                                       |
+| `test/quota-contracts.test.cjs` / `test/quota-contracts.types.ts` | Value and compile-time contract tests, including response-only Claude capabilities and per-window provenance.           |
+| `docs/PRD.md`                                                     | Canonical requirements and phase acceptance gates.                                                                      |
 
-Keep the single runtime module until a later phase has a concrete reason to split it.
-Preserve `subscription:limits`, `subscription-limits` source, and `/subscription-debug`
-for baseline compatibility. The package dependency remains `pi-atelier@^0.16.0`;
+Preserve existing panel identifiers and `/subscription-debug` for compatibility.
+The package dependency remains `pi-atelier@^0.16.0`;
 Pi agent/TUI peer ranges remain inherited `*`. Types are checked against the lockfile's
 resolved peers, not every Pi version. The ambient Atelier declaration can mask API
 drift; automated tests mock registration and do not prove live TUI compatibility.
 
 ## Manual smoke test (requires the owner's configured TUI)
 
-For the pending Phase 4 command/menu feasibility gate, first use the isolated
-[fictional-data interaction spike](references/atelier-spike.md). It does not run
-the baseline usage calls described below, and no live result has been claimed.
+The owner already demonstrated the command/menu pathway using the isolated
+[fictional-data interaction spike](references/atelier-spike.md). That does not
+prove production persistence or resizing. The following production smoke remains
+pending and can be combined with the final Phase 5 smoke.
 
 1. Ensure only one copy is loaded; start Pi without changing providers or credentials.
-2. Open `/atelier`, enable **Subscription** in **Settings → Display**, and verify
-   Codex/Claude headings, reported used percentages/countdowns, or truthful error labels.
-3. Hide/reorder the panel, resize the terminal, and confirm Atelier remains usable.
+2. Open `/atelier`, enable the provider panels in **Settings → Display**, choose
+   **Save default**, and verify
+   headings, reported percentages/countdowns, or truthful error labels.
+3. Use `/subscriptions` to change independent expansion and display preferences;
+   hide/reorder panels, resize the terminal, and confirm Atelier remains usable.
 4. Optionally arm `/subscription-debug` before an **already intended** ordinary response.
    Expect only provider/status/header names, no header values, credentials, or prompt text.
-5. Exit/restart or reload and confirm no duplicate panel is loaded.
+5. Exit/restart or reload; confirm saved preferences persist and no duplicate panel is loaded.
 
-This smoke test has **not** been run in Phase 1's noninteractive environment.
-No authenticated endpoint was probed and no global Pi settings were modified.
+The production smoke has not yet been completed. Owner-authorized source probes
+are documented separately in [provider discovery](references/provider-discovery.md).
 
-## Preferences foundation (not wired into the runtime yet)
+## Preferences
 
 `extensions/preferences.ts` implements the [schema-1 configuration](PRD.md#6-configuration)
 at `getAgentDir()/subscription-panel.json` (normally `~/.pi/agent/subscription-panel.json`).
@@ -90,30 +90,31 @@ Loading never writes. Explicit saves use an exclusive temporary file and atomic
 replacement; malformed/unreadable/future-schema files are protected with generic
 warnings. This is not a cross-session read/modify/write transaction. Tests override
 the path and use disposable directories under the approved temp `opencode` root,
-never the owner's agent configuration. The production entry point does not load
-or save these preferences until the later runtime-wiring unit.
+never the owner's agent configuration. The production controller loads and explicitly
+saves these preferences; real TUI persistence remains to be verified.
 
-## Baseline limitations and audit findings
+## Current refresh limitations and historical Phase 1 audit findings
 
-The baseline queries usage at TUI session start, then approximately every minute
+The current baseline queries usage at TUI session start, then approximately every 60 seconds
 for Codex and every 30 minutes for native Anthropic. Countdown rendering updates
 locally every minute. HTTP 429 defers retries by at least the normal interval,
 five minutes, and any server-provided `Retry-After`.
 
-This native Anthropic baseline is separate from the **approved, not yet implemented**
+This native Anthropic baseline is separate from the implemented
 Claude Code behavior: update from every ordinary response carrying valid quota
 metadata, with no extra/scheduled query or three-minute throttle. Missing data
 keeps the previous observation's real age; reset countdowns update locally.
 See [the canonical refresh policy](PRD.md#5-refresh-policy) for provider-specific rules.
 
-- Native `anthropic` OAuth reporting is not `pi-claude-code` support. Antigravity is absent.
-- No accordion, persisted preferences, freshness timestamp, activity-aware scheduling,
-  per-provider in-flight guard, or cross-session deduplication exists yet.
-- Missing windows currently include a zero-length progress field alongside `n/d`;
-  text percentages can exceed 100 even though bars clamp. These PRD/UI gaps are deferred
-  to the relevant later phases, not silently fixed during setup.
+- Native `anthropic` OAuth reporting is separate from Claude Code. Antigravity
+  automatic acquisition, activity-aware scheduling and hardened retry handling are
+  not implemented. Phase 5's approved design does not claim cross-process deduplication.
 - Baseline retries are not disabled on 401/403. Undocumented endpoints may throttle
-  or change. Preserve the existing behavior in this phase.
+  or change; a successful probe does not establish a safe polling threshold.
+
+The following are **historical Phase 1 audit findings**, not claims about the
+current dependency tree or UI:
+
 - Initial `npm ci` succeeded on Node 24.18.0 / npm 11.16.0. Lint, types, and all ten
   tests passed; formatting initially failed on copied files (including CRLF endings).
   `.gitattributes` and Prettier normalization make the checkout consistent.

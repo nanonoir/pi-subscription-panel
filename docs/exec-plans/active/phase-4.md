@@ -47,13 +47,14 @@ and unrelated Dependabot work. Do not install packages or generate inference to
 probe quota. Every PR must remain within the delivery size budget and pass
 applicable checks before authorized merge. No costly E2E infrastructure.
 
-## Outcome — quota source verified; production wiring pending
+## Spike outcome — quota source verified; production wiring then pending
 
 The command/menu interaction gate is satisfied by the owner's screenshot: all
 three TEST panels rendered, with Codex collapsed retaining its heading/summary
 while Claude Code and Antigravity remained expanded. This does not establish live
 quota accuracy, account compatibility, preference persistence, resizing behavior,
-or completion of the production UI. Production implementation remains pending.
+or completion of the production UI. Production implementation was pending at this gate;
+see the implementation outcome below for current status.
 
 ## Spike validation
 
@@ -244,5 +245,45 @@ passed. The final wiring is preserved outside the repository under the approved
 temp `opencode/psp-final-variant` directory for restoration after prep delivery.
 Final-over-prep is 583 authored lines, including the delayed-start regression and
 all six real-module-graph integration tests. Independent final review passed both
-variants; 78 final tests passed before the server restart. Revalidate the actual
-restored final tree before delivery. No live quota probe needs repeating.
+variants; 78 final tests passed before the server restart.
+
+## Implementation Outcome — implementation milestone; Phase 4 acceptance pending
+
+### Implemented
+
+Preparation shipped as PR #12, merged at `9ac008e`. The restored production entry
+point composes the controller, `/subscriptions`, and Claude `message_end`
+observations. It retains native Anthropic 30-minute and Codex 60-minute baseline
+reads, using the additional Codex OAuth only for quota with JWT-first matched
+account metadata. Provider windows, remaining/used presentation, age and persisted
+preferences are wired. Models remain on `openai/{model}`. Automatic Antigravity
+acquisition and safe scheduling remain Phase 5 work.
+
+### Deviations from Design
+
+The owner supplied an additional official Pi Codex session after the original
+`openai` quota probe failed; the canonical model identity did not change. Production
+delivery was split into preparation and final wiring to preserve integration coverage
+within the delivery budget. The final wiring PR has not yet been delivered or merged.
+
+### Validation
+
+The actual restored final tree passed `npm run check` with 78 tests, including six
+real-module-graph mocked integration tests and fake-file preference profiles; tests
+made no real provider queries. Independent final review (`ses_e3bdfa`) passed after
+fixing the startup header race by enabling observations before awaiting controller
+start. Earlier owner-authorized Codex and Antigravity source probes returned 200;
+no account IDs or live percentages were persisted. The owner's spike screenshot
+proved three test panel headings and collapse interaction, not production behavior.
+
+### Follow-up and acceptance checklist
+
+- [ ] In the owner's actual production TUI, verify preference persistence across
+      restart/reload, independent expansion, and narrow/resized layout.
+- [ ] Complete the production smoke and final acceptance; this may be combined with
+      the final Phase 5 smoke to avoid repeating owner interaction.
+- [ ] Deliver and review the final wiring PR and observe its required CI/merge gates;
+      no final commit, CI result, or merge is claimed here.
+
+The Phase 5 scheduling design is approved but not implemented. Keep this plan active
+until the production manual evidence and remaining acceptance gates are satisfied.
