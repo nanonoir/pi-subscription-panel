@@ -66,16 +66,20 @@ the baseline usage calls described below, and no live result has been claimed.
 This smoke test has **not** been run in Phase 1's noninteractive environment.
 No authenticated endpoint was probed and no global Pi settings were modified.
 
-## Future configuration decision (not implemented)
+## Preferences foundation (not wired into the runtime yet)
 
-Reserve `subscription-panel.json` in Pi's agent configuration directory (normally
-`~/.pi/agent/subscription-panel.json`) for later global preferences. Phase 1 does not
-read, create, or write it. The [PRD configuration example](PRD.md#6-configuration)
-is illustrative, not an accepted runtime schema today.
+`extensions/preferences.ts` implements the [schema-1 configuration](PRD.md#6-configuration)
+at `getAgentDir()/subscription-panel.json` (normally `~/.pi/agent/subscription-panel.json`).
+It defaults to remaining percentages, expanded provider details, response-only
+Claude Code, and disabled Antigravity acquisition. The age threshold is local
+presentation state, not a quota-request interval.
 
-The later implementation must validate partial/invalid settings with safe defaults,
-version its schema before migrations, keep secrets out, and preserve compatible known
-preferences. There is no settings migration now because no settings loader exists.
+Loading never writes. Explicit saves use an exclusive temporary file and atomic
+replacement; malformed/unreadable/future-schema files are protected with generic
+warnings. This is not a cross-session read/modify/write transaction. Tests override
+the path and use disposable directories under the approved temp `opencode` root,
+never the owner's agent configuration. The production entry point does not load
+or save these preferences until the later runtime-wiring unit.
 
 ## Baseline limitations and audit findings
 

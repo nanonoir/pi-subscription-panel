@@ -30,6 +30,12 @@ settles without waiting for stream closure, destroys owned stdout, and signals
 only the direct child; shared engines/unknown descendants are never terminated.
 It is disabled by default and not invoked by the entry point or any timer yet.
 
+`extensions/preferences.ts` owns schema-1 global preferences at the reserved Pi
+agent-directory path. Reads never write; explicit saves normalize known settings
+and atomically replace a same-directory temporary file. Malformed/unreadable/future
+schemas are read-only. Atomic replacement is not cross-session transactionality.
+The entry point is not wired to this preferences module yet.
+
 ## Target versus current
 
 The [PRD](docs/PRD.md) describes future adapters, interactive provider sections, settings, and refresh hardening. These are target requirements, not the current architecture. The [development guide](docs/DEVELOPMENT.md) records baseline limitations and the manual TUI smoke procedure.

@@ -152,14 +152,18 @@ Implementation can improve types after source verification; all percentages must
 
 ## 6. Configuration
 
-Global config in the Pi agent configuration directory (filename finalized in Phase 1), with explicit schema, safe defaults and migration policy.
+Global config is `subscription-panel.json` under Pi's agent configuration directory
+(resolved with `getAgentDir()`). The standalone preferences module implements
+schema 1; runtime wiring is a subsequent Phase 4 unit.
 
-Proposed settings (illustrative; not assumed to exist in the current code):
+Schema 1 defaults (native `anthropic` remains separate from `claude-code`):
 
 ```json
 {
+  "schemaVersion": 1,
   "displayMode": "remaining",
-  "expandedProviders": ["codex", "claude-code", "antigravity"],
+  "expandedProviders": ["codex", "claude-code", "antigravity", "anthropic"],
+  "staleAfterSeconds": 180,
   "refresh": {
     "codexSeconds": 60,
     "claude": { "mode": "response-event" },
@@ -169,6 +173,19 @@ Proposed settings (illustrative; not assumed to exist in the current code):
 ```
 
 No secrets or personal tokens in the configuration. Validate invalid and partial settings; retain backward compatibility where possible.
+
+Missing fields use independent safe defaults. An empty expansion list means all
+details collapsed, not hidden headers. Minimum intervals are 60 seconds for Codex,
+180/1200 seconds for Antigravity active/idle, and 60 seconds for the configurable
+observation-age threshold. `staleAfterSeconds` controls a local label, never a
+Claude request. Claude's mode is always `response-event`, even if a file requests polling.
+
+Loading never creates or rewrites the file. Missing `schemaVersion` is compatible
+with schema 1 and is versioned only on explicit save. Malformed, unreadable, or
+future-version files yield defaults/read-only warnings and must not be silently
+overwritten. Saves serialize known schema-1 fields using an exclusive temporary
+file and atomic replacement; this is not a cross-session transaction. No earlier
+stored schema is known. Unknown schema-1 keys are not preserved on explicit save.
 
 ## 7. Phased implementation and commit gates
 

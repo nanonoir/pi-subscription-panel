@@ -35,6 +35,10 @@ that existing host's entry-point path. No `pi install` or global config edit is 
    confuse them with real subscription data or change existing provider panels.
 2. Confirm Codex, Claude Code, and Antigravity test headings/details are visible
    together in the right sidebar. Looking at them requires no test command.
+   Display edits (visibility/order) are only a **draft** until you choose
+   **Save default**; the running sidebar does not change before that succeeds.
+   After saving, reopen Display and confirm it reports "Saved as User default"
+   and lists the three TEST entries with titles, not "unavailable", and marked ●.
 3. Run `/subscriptions-spike`, choose Claude Code, and confirm only its details
    collapse. Its heading and concise quota summary must remain visible; the other
    two panels must not change.
@@ -50,6 +54,36 @@ Confirm host version, whether all three panels appeared, whether independent
 collapse/expand preserved headings/summaries, and any errors or narrow-layout
 issues. Do not share credentials, account IDs, private prompts, or raw CLI output.
 
-**Status: awaiting actual TUI observation.** Mock tests and typechecking do not
-satisfy this gate. Preference persistence, real provider freshness, and production
-integration require later implementation and validation after this interaction proof.
+## Troubleshooting: TEST panels not visible
+
+Check in this order:
+
+1. **Saved?** Reopen Display. If the TEST entries are not shown as saved/enabled
+   (●), enable them and choose **Save default**. Do the same after restoring the
+   original layout; an unsaved draft is not applied.
+2. **Unavailable or missing entries.** If the TEST entries show "unavailable" or
+   do not appear at all, report that as a transport/registration diagnostic. Do
+   not assume a height or protocol cause.
+3. **Saved and available, but still not shown.** The host fits panels vertically
+   and may drop a whole contributed panel (no scrolling) when height is
+   insufficient, even if saved as visible. Contributed panels rank after built-in
+   ones, and reordering does not raise that rank. Either increase the terminal
+   height, or temporarily hide built-in panels in Display and **Save default**.
+4. **Restore.** Return the original visibility/order through Display and
+   **Save default** again, and hide the three TEST panels before exiting.
+
+Host evidence (installed 0.18.0): `src/settings-workspace.ts` lines 254–262,
+287–292, 322–347 (draft versus save) and `src/sidebar.ts` lines 540–564, 639–668
+(vertical fit).
+
+## Actual TUI observation
+
+The owner supplied a screenshot showing all three TEST panels in the right sidebar:
+Codex collapsed with its title and summary retained, while Claude Code and
+Antigravity showed expanded fictional five-hour/weekly rows. This satisfies the
+command/menu interaction feasibility gate; it is not a clickable accordion.
+
+The earlier missing-panel report was resolved enough to observe the interaction,
+but the exact cause was not independently established. Do not infer a transport or
+renderer fix. Persistence, resizing, live quota accuracy/account compatibility, and
+production integration still require separate implementation and validation.
