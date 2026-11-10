@@ -175,6 +175,7 @@ Schema 1 defaults (native `anthropic` remains separate from `claude-code`):
   "staleAfterSeconds": 180,
   "refresh": {
     "codexSeconds": 60,
+    "whileCollapsed": true,
     "claude": { "mode": "response-event" },
     "antigravity": { "mode": "off", "activeSeconds": 180, "idleSeconds": 1200 }
   }

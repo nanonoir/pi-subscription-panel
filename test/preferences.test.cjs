@@ -68,6 +68,7 @@ test("missing file yields writable defaults without creating anything", () =>
         codexSeconds: 60,
         claude: { mode: "response-event" },
         antigravity: { mode: "off", activeSeconds: 180, idleSeconds: 1200 },
+        whileCollapsed: true,
       },
       staleAfterSeconds: 180,
     });
@@ -132,6 +133,19 @@ test("Claude mode is always response-event, even when auto-like input is stored"
     const result = normalizePreferences({ refresh: { claude: { mode } } });
     assert.deepEqual(plain(result.refresh.claude), { mode: "response-event" });
   }
+});
+
+test("refresh while collapsed defaults on, accepts only booleans and is independent of expansion", () => {
+  const read = (value) =>
+    normalizePreferences({
+      expandedProviders: [],
+      refresh: { whileCollapsed: value },
+    });
+  assert.equal(read(false).refresh.whileCollapsed, false);
+  assert.equal(read(true).refresh.whileCollapsed, true);
+  for (const bad of ["false", 0, null, undefined])
+    assert.equal(read(bad).refresh.whileCollapsed, true);
+  assert.deepEqual(plain(read(false).expandedProviders), []);
 });
 
 test("expandedProviders: [] means all collapsed; non-array uses defaults", () => {

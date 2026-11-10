@@ -27,8 +27,8 @@ The production entry point composes the provider panels, preferences and
 `/subscriptions` controls. `extensions/provider-adapters.ts` parses ordinary Claude
 Code response metadata and Antigravity usage reports without I/O, preserving
 per-window observation age during partial updates. `extensions/antigravity-cli.ts`
-provides a default-disabled CLI adapter, but automatic acquisition is not invoked
-before Phase 5. Adapter tests use synthetic payloads and deterministic process and
+provides the default-disabled CLI adapter, invoked by the refresh runtime when opted
+in and eligible. Adapter tests use synthetic payloads and deterministic process and
 timer doubles; no test starts the real CLI.
 
 The `quota-presentation.ts` renderer labels used/remaining values, retains independent pool identities and
@@ -43,14 +43,15 @@ loads, serialized-save/restart ordering, and independent controls. Six entry-poi
 integration tests exercise the real module graph with mocked external effects and
 fake-file profiles; they do not establish actual TUI behavior.
 
-| Location                                                          | Responsibility                                                                                                          |
-| ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `extensions/index.ts`                                             | Runtime composition, OAuth-backed read-only usage calls, baseline refresh loop, response events and diagnostic command. |
-| `extensions/quota-contracts.ts`                                   | Shared quota/adapter contracts and percentage validation.                                                               |
-| `types/pi-atelier.d.ts`                                           | Local declaration for the public Atelier contribution API; it is not runtime code.                                      |
-| `test/usage.test.cjs`                                             | Transpiles the extension in a VM with mocked Pi, Atelier, fetch, and credentials.                                       |
-| `test/quota-contracts.test.cjs` / `test/quota-contracts.types.ts` | Value and compile-time contract tests, including response-only Claude capabilities and per-window provenance.           |
-| `docs/PRD.md`                                                     | Canonical requirements and phase acceptance gates.                                                                      |
+| Location                                                            | Responsibility                                                                                                 |
+| ------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `extensions/index.ts`                                               | Runtime composition, OAuth-backed read-only usage calls, refresh tick, response events and diagnostic command. |
+| `extensions/refresh-scheduler.ts` / `extensions/refresh-runtime.ts` | Process-realm scheduling metadata, provider eligibility, cancellation and result delivery.                     |
+| `extensions/quota-contracts.ts`                                     | Shared quota/adapter contracts and percentage validation.                                                      |
+| `types/pi-atelier.d.ts`                                             | Local declaration for the public Atelier contribution API; it is not runtime code.                             |
+| `test/usage.test.cjs`                                               | Transpiles the extension in a VM with mocked Pi, Atelier, fetch, and credentials.                              |
+| `test/quota-contracts.test.cjs` / `test/quota-contracts.types.ts`   | Value and compile-time contract tests, including response-only Claude capabilities and per-window provenance.  |
+| `docs/PRD.md`                                                       | Canonical requirements and phase acceptance gates.                                                             |
 
 Preserve existing panel identifiers and `/subscription-debug` for compatibility.
 The package dependency remains `pi-atelier@^0.16.0`;
@@ -73,7 +74,10 @@ pending and can be combined with the final Phase 5 smoke.
    hide/reorder panels, resize the terminal, and confirm Atelier remains usable.
 4. Optionally arm `/subscription-debug` before an **already intended** ordinary response.
    Expect only provider/status/header names, no header values, credentials, or prompt text.
-5. Exit/restart or reload; confirm saved preferences persist and no duplicate panel is loaded.
+5. Exercise the opt-in and retry controls as appropriate with the owner; exit/restart
+   or reload, confirm saved preferences persist and no duplicate panel is loaded.
+   Verify actual reload behavior separately; a successful synthetic loader test is
+   not proof that real Pi `/reload` shares the registry.
 
 The production smoke has not yet been completed. Owner-authorized source probes
 are documented separately in [provider discovery](references/provider-discovery.md).
@@ -93,12 +97,15 @@ the path and use disposable directories under the approved temp `opencode` root,
 never the owner's agent configuration. The production controller loads and explicitly
 saves these preferences; real TUI persistence remains to be verified.
 
-## Current refresh limitations and historical Phase 1 audit findings
+## Refresh behavior and limitations
 
-The current baseline queries usage at TUI session start, then approximately every 60 seconds
-for Codex and every 30 minutes for native Anthropic. Countdown rendering updates
-locally every minute. HTTP 429 defers retries by at least the normal interval,
-five minutes, and any server-provided `Retry-After`.
+The scheduler checks eligibility at TUI startup and on a minute-scale tick, with
+minimum attempt gaps of 60 seconds for Codex and 30 minutes for native Anthropic.
+Antigravity is disabled by default; `/subscriptions refresh antigravity on` opts in
+and `off` disables it. Its minimum gaps are three minutes after relevant recent
+activity and 20 minutes when idle. Ordinary provider responses, not UI repaint,
+record activity for ten minutes. Countdown rendering updates locally every minute.
+HTTP 429 and recoverable failures apply backoff and honor server `Retry-After`.
 
 This native Anthropic baseline is separate from the implemented
 Claude Code behavior: update from every ordinary response carrying valid quota
@@ -106,11 +113,26 @@ metadata, with no extra/scheduled query or three-minute throttle. Missing data
 keeps the previous observation's real age; reset countdowns update locally.
 See [the canonical refresh policy](PRD.md#5-refresh-policy) for provider-specific rules.
 
-- Native `anthropic` OAuth reporting is separate from Claude Code. Antigravity
-  automatic acquisition, activity-aware scheduling and hardened retry handling are
-  not implemented. Phase 5's approved design does not claim cross-process deduplication.
-- Baseline retries are not disabled on 401/403. Undocumented endpoints may throttle
-  or change; a successful probe does not establish a safe polling threshold.
+- Native `anthropic` OAuth reporting is separate from Claude Code. A 401/403 or
+  unavailable authentication blocks automated retries; indeterminate Antigravity
+  errors do likewise. `/subscriptions retry codex|anthropic|antigravity` (choose one
+  provider) clears a block when enabled, subject to gaps and server deadlines; a
+  deferred retry runs on an eligible later tick. Repaint, expansion and reload do
+  not intentionally clear blocks. After account changes, reload and explicitly retry
+  as appropriate; automatic account detection is not guaranteed.
+- `/subscriptions refresh collapsed off` pauses acquisition for collapsed providers;
+  `on` (the default) keeps it enabled. This policy is independent of expansion and
+  preserves backoff. Preference changes do not directly issue reads.
+- Registry coordination is per shared process realm, not cross-process. The synthetic
+  Jiti `evalModule` test shared `globalThis` and `Symbol.for`, but did not exercise
+  Pi's real `jiti.import` or `/reload`. No actual reload guarantee follows.
+- Stop/disable aborts supported requests and signals only the owned Antigravity
+  child; exclusion persists until settlement, including child termination. Shared
+  engines and unknown descendants are not terminated. Stale work cannot publish.
+  Undocumented endpoints may change; one successful probe does not establish a safe
+  polling threshold.
+
+## Historical Phase 1 audit findings
 
 The following are **historical Phase 1 audit findings**, not claims about the
 current dependency tree or UI:

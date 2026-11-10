@@ -26,8 +26,8 @@ an unverified previous-account quota snapshot.
 The engine accepts only polling-capable provider jobs, an injected clock/random
 source, and result delivery. Root composition owns one minute-scale tick for local
 rendering and acquisition eligibility; repaint, expansion and model selection do
-not request quota or reset activity. Relevant ordinary provider turns/responses
-within ten minutes define activity, not UI repaint.
+not request quota or reset activity. Relevant ordinary provider responses within ten
+minutes define activity in the current runtime, not UI repaint.
 
 Keep presentation-facing `QuotaResult` separate from a sanitized poll outcome:
 success, recoverable failure, authentication unavailable/rejected, indeterminate

@@ -282,11 +282,12 @@ proved three test panel headings and collapse interaction, not production behavi
       restart/reload, independent expansion, and narrow/resized layout.
 - [ ] Complete the production smoke and final acceptance; this may be combined with
       the final Phase 5 smoke to avoid repeating owner interaction.
-- [ ] Deliver and review the final wiring PR and observe its required CI/merge gates;
-      no final commit, CI result, or merge is claimed here.
+- [x] Deliver and review the final wiring PR and observe its required CI/merge gates;
+      the subsequent delivery follow-up records the historical result.
 
-The Phase 5 scheduling design is approved but not implemented. Keep this plan active
-until the production manual evidence and remaining acceptance gates are satisfied.
+Phase 5 scheduling is now integrated in the current working tree; see the active
+[Phase 5 plan](phase-5.md) for synthetic validation and remaining gates. Keep this
+plan active until the production manual evidence and acceptance gates are satisfied.
 
 ### Delivery follow-up
 

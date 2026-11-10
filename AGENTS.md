@@ -1,6 +1,6 @@
 # Pi Subscription Panel
 
-Read-only subscription usage panel for Pi and Pi Atelier. Models keep the canonical `openai/{model}` integration. The owner additionally signed into Pi's OpenAI Codex provider for quota reads only: one authorized WHAM probe returned 200 with real five-hour/weekly percentages and resets. Use that existing `openai-codex` OAuth only for quota, never switch execution/authentication or install another CLI. Runtime wiring composes the tested provider panels/preferences; safe scheduling and Antigravity acquisition remain Phase 5 work.
+Read-only subscription usage panel for Pi and Pi Atelier. Models keep the canonical `openai/{model}` integration. The owner additionally signed into Pi's OpenAI Codex provider for quota reads only: one authorized WHAM probe returned 200 with real five-hour/weekly percentages and resets. Use that existing `openai-codex` OAuth only for quota, never switch execution/authentication or install another CLI. Runtime wiring includes safe scheduling and opt-in Antigravity acquisition; actual production TUI acceptance remains pending.
 
 ## Stack and structure
 

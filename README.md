@@ -9,14 +9,14 @@ A read-only subscription usage panel for the [Pi](https://pi.dev/) TUI and
 | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
 | Codex                          | Reads real quota through the existing Pi **OpenAI Codex** OAuth session. Model execution keeps `openai/{model}` and its own login. |
 | Claude Code / `pi-claude-code` | Updates after each ordinary response carrying valid quota metadata. No additional request or polling.                              |
-| Antigravity bridge             | CLI quota source and adapter verified; automatic refresh is still pending Phase 5 and is disabled by default.                      |
+| Antigravity bridge             | Existing CLI quota source; automatic refresh is implemented but disabled by default.                                               |
 | Native Anthropic OAuth         | Separate optional compatibility panel; not the authentication source for Claude Code.                                              |
 
 Panels default to **remaining** percentages, with reset countdowns and observation
 age. Missing windows are explained without fabricated bars. Partial updates keep
-the other window's actual age, and stale or failed readings are marked. Codex and
-native Anthropic retain their baseline refresh intervals for now; configurable
-scheduling, retry hardening, and Antigravity acquisition are the next delivery.
+the other window's actual age, and stale or failed readings are marked. Refresh
+uses conservative minimum gaps and failure handling; actual production TUI acceptance
+remains pending.
 
 ## Install and run locally
 
@@ -63,6 +63,13 @@ controls for independent detail expansion and used/remaining display:
 /subscriptions toggle antigravity
 /subscriptions display remaining
 /subscriptions display used
+/subscriptions refresh antigravity on
+/subscriptions refresh antigravity off
+/subscriptions refresh collapsed on
+/subscriptions refresh collapsed off
+/subscriptions retry codex
+/subscriptions retry antigravity
+/subscriptions retry anthropic
 ```
 
 Collapsing retains the heading and summary; it does not hide/unregister a panel,
@@ -70,6 +77,15 @@ delete quota data, or request quota. Preferences persist globally in
 `getAgentDir()/subscription-panel.json`, normally `~/.pi/agent/subscription-panel.json`.
 The file is written only after an explicit preference change. Protected/failed
 saves are reported as session-only. These are command/menu controls, **not clickable headings**.
+
+Antigravity refresh is opt-in. Refresh while collapsed is on by default and is a
+separate preference; turning it off pauses polling for collapsed providers without
+clearing backoff. Changing these settings or expanding a panel does not itself start
+a read. Manual retry may start one, or report that it is deferred, in progress, or
+disabled; it respects minimum gaps and server deadlines. Authentication failures
+and indeterminate Antigravity failures pause automatic retries until manual retry.
+After an account change, use reload and explicit retry as appropriate; automatic
+account-change detection is not guaranteed.
 
 ## Data sources and limitations
 
@@ -79,14 +95,20 @@ saves are reported as session-only. These are command/menu controls, **not click
 - Claude Code: its ordinary response's `claude-code.rate-limit` diagnostic.
   Aggregate window fields are internal and optional; missing data is never estimated.
 - Native Anthropic: preserved `https://api.anthropic.com/api/oauth/usage` path.
-- Antigravity: verified existing CLI `/usage` source; not yet scheduled by this runtime.
+- Antigravity: existing CLI `/usage` source; scheduled only after explicit opt-in.
 
 Usage endpoints are undocumented interfaces, not guaranteed public APIs. Codex
-currently refreshes about every minute; native Anthropic every 30 minutes. HTTP
-requests reject redirects and time out after ten seconds; 429 retains conservative
-baseline backoff and `Retry-After`. Local ages/countdowns update each minute,
+has a 60-second minimum gap; native Anthropic has a 30-minute gap. Antigravity
+has minimum gaps of three minutes when recently active and 20 minutes when idle.
+HTTP requests reject redirects and time out after ten seconds; 429 and recoverable
+failures back off and honor `Retry-After`. Local ages/countdowns update each minute,
 without querying Claude Code. The three-minute stale label is an observation-age
 threshold, not a Claude polling interval or a guaranteed provider freshness value.
+
+Coordination is process-realm local, not cross-process; actual Pi `/reload` sharing
+has not been proven. Synthetic tests do not establish production TUI behavior.
+Stopping or disabling supported work requests cancellation; exclusion remains until
+settlement, including the owned Antigravity child, not shared engines or descendants.
 
 No inference is generated to measure quota. Credentials/account IDs are not
 displayed, persisted in panel preferences, or included in errors. Pi may renew

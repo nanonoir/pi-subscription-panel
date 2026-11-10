@@ -2,9 +2,22 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { readStoredCredential } from "@earendil-works/pi-coding-agent";
+import {
+  getAgentDir,
+  readStoredCredential,
+} from "@earendil-works/pi-coding-agent";
+import { createAntigravityAdapter } from "./antigravity-cli.ts";
 import { toQuotaResult } from "./legacy-quota.ts";
-import { PROVIDER, SOURCE, type ProviderId } from "./quota-contracts.ts";
+import {
+  toPollOutcome,
+  type PollOutcome,
+  type PollingProviderId,
+} from "./poll-outcome.ts";
+import { AVAILABILITY, PROVIDER, SOURCE } from "./quota-contracts.ts";
+import {
+  createRefreshRuntime,
+  type RefreshRuntime,
+} from "./refresh-runtime.ts";
 import { createSubscriptionPanels } from "./subscription-panels.ts";
 
 type UsageWindow = {
@@ -23,12 +36,16 @@ type ProviderUsage = {
   error?: string;
   windowErrors?: { fiveHour?: string; weekly?: string };
   retryAt?: number;
+  /** Transport facts for the poll outcome; never derived from error text. */
+  status?: number;
+  serverRetryAt?: number;
+  authUnavailable?: boolean;
+  cancelled?: boolean;
 };
 
 type JsonRecord = Record<string, unknown>;
 const REFRESH_INTERVAL_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10_000;
-const CLAUDE_REFRESH_INTERVAL_MS = 30 * 60_000;
 const RATE_LIMIT_BACKOFF_MS = 5 * 60_000;
 
 class UsageHttpError extends Error {
@@ -247,11 +264,13 @@ function errorLabel(error: unknown): string {
 async function fetchJson(
   url: string,
   headers: Record<string, string>,
+  cancel?: AbortSignal,
 ): Promise<unknown> {
+  const timeout = AbortSignal.timeout(REQUEST_TIMEOUT_MS);
   const response = await fetch(url, {
     headers,
     redirect: "error",
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: cancel ? AbortSignal.any([cancel, timeout]) : timeout,
   });
   if (!response.ok) {
     const retryAfter = response.headers.get("retry-after");
@@ -261,7 +280,13 @@ async function fetchJson(
         : Number.isFinite(Number(retryAfter))
           ? Date.now() + Math.max(0, Number(retryAfter)) * 1000
           : Date.parse(retryAfter);
-    await response.body?.cancel();
+    // Status and deadline are already known: body cleanup is best effort and
+    // can neither delay nor replace them.
+    try {
+      response.body?.cancel().catch(() => undefined);
+    } catch {
+      // Ignored: cleanup failure must not erase the validated failure.
+    }
     throw new UsageHttpError(
       response.status,
       retryAt !== undefined && Number.isFinite(retryAt) ? retryAt : undefined,
@@ -270,13 +295,23 @@ async function fetchJson(
   return response.json();
 }
 
-async function readCodexUsage(ctx: ExtensionContext): Promise<ProviderUsage> {
+const CANCELLED: ProviderUsage = { cancelled: true };
+
+async function readCodexUsage(
+  ctx: ExtensionContext,
+  signal?: AbortSignal,
+): Promise<ProviderUsage> {
   try {
     const providerAuth =
       await ctx.modelRegistry.getProviderAuth("openai-codex");
+    // Pi's own token renewal has settled; never start a request after a stop.
+    if (signal?.aborted) return CANCELLED;
     const accessToken = providerAuth?.auth.apiKey;
     if (providerAuth?.source !== "OAuth" || !accessToken)
-      return { error: "sin sesión de cuota OpenAI Codex" };
+      return {
+        error: "sin sesión de cuota OpenAI Codex",
+        authUnavailable: true,
+      };
     const credential = readStoredCredential("openai-codex");
     // Stored metadata is only trusted when it belongs to the resolved token.
     const accountId =
@@ -287,7 +322,8 @@ async function readCodexUsage(ctx: ExtensionContext): Promise<ProviderUsage> {
       credential.accountId
         ? credential.accountId
         : undefined);
-    if (!accountId) return { error: "token sin ID de cuenta Codex" };
+    if (!accountId)
+      return { error: "token sin ID de cuenta Codex", authUnavailable: true };
     const payload = await fetchJson(
       "https://chatgpt.com/backend-api/wham/usage",
       {
@@ -295,19 +331,25 @@ async function readCodexUsage(ctx: ExtensionContext): Promise<ProviderUsage> {
         "ChatGPT-Account-Id": accountId,
         Accept: "application/json",
       },
+      signal,
     );
     return parseCodexUsage(payload);
   } catch (error) {
-    return usageFailure(error);
+    if (error instanceof UsageHttpError) return usageFailure(error);
+    return signal?.aborted ? CANCELLED : usageFailure(error);
   }
 }
 
-async function readClaudeUsage(ctx: ExtensionContext): Promise<ProviderUsage> {
+async function readClaudeUsage(
+  ctx: ExtensionContext,
+  signal?: AbortSignal,
+): Promise<ProviderUsage> {
   try {
     const providerAuth = await ctx.modelRegistry.getProviderAuth("anthropic");
+    if (signal?.aborted) return CANCELLED;
     const accessToken = providerAuth?.auth.apiKey;
     if (providerAuth?.source !== "OAuth" || !accessToken)
-      return { error: "sin sesión OAuth de Anthropic" };
+      return { error: "sin sesión OAuth de Anthropic", authUnavailable: true };
     const payload = await fetchJson(
       "https://api.anthropic.com/api/oauth/usage",
       {
@@ -318,16 +360,26 @@ async function readClaudeUsage(ctx: ExtensionContext): Promise<ProviderUsage> {
         "x-app": "cli",
         Accept: "application/json",
       },
+      signal,
     );
     return parseClaudeUsage(payload);
   } catch (error) {
-    return usageFailure(error);
+    if (error instanceof UsageHttpError) return usageFailure(error);
+    return signal?.aborted ? CANCELLED : usageFailure(error);
   }
 }
 
 function usageFailure(error: unknown): ProviderUsage {
   return {
     error: errorLabel(error),
+    ...(error instanceof UsageHttpError
+      ? {
+          status: error.status,
+          ...(error.retryAt === undefined
+            ? {}
+            : { serverRetryAt: error.retryAt }),
+        }
+      : {}),
     ...(error instanceof UsageHttpError && error.status === 429
       ? {
           retryAt: Math.max(
@@ -402,23 +454,46 @@ function usageFromHeaders(
   return windows.fiveHour || windows.weekly ? windows : undefined;
 }
 
-const POLLED = [
-  { id: PROVIDER.CODEX, read: readCodexUsage, interval: REFRESH_INTERVAL_MS },
-  {
-    id: PROVIDER.ANTHROPIC,
-    read: readClaudeUsage,
-    interval: CLAUDE_REFRESH_INTERVAL_MS,
-  },
-] as const;
+/** Sanitized outcome of one HTTP read; failures never carry windows. */
+function usageOutcome(
+  id: PollingProviderId,
+  usage: ProviderUsage,
+  now: number,
+): PollOutcome {
+  if (usage.cancelled)
+    return toPollOutcome(
+      id,
+      { providerId: id, availability: AVAILABILITY.WAITING, pools: [] },
+      { cancelled: true },
+    );
+  const deadlines = [usage.retryAt, usage.serverRetryAt].filter(
+    (value): value is number => value !== undefined,
+  );
+  return toPollOutcome(
+    id,
+    toQuotaResult(id, usage, now, SOURCE.READ_ONLY_ENDPOINT),
+    {
+      ...(usage.status === undefined ? {} : { httpStatus: usage.status }),
+      ...(usage.authUnavailable ? { authUnavailable: true } : {}),
+      ...(deadlines.length ? { retryAtMs: Math.max(...deadlines) } : {}),
+    },
+  );
+}
 
 export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
-  const controller = createSubscriptionPanels(pi);
+  let runtime: RefreshRuntime | undefined;
+  const controller = createSubscriptionPanels(pi, {
+    retry: (id) => runtime?.retry(id),
+    onPreferencesChange: () => runtime?.preferencesChanged(),
+  });
+  // Distinct per extension instance: a reload is retired by shutdown, and any
+  // other live instance in this process stays independent.
+  const owner = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const antigravity = createAntigravityAdapter({ enabled: true });
   let timer: ReturnType<typeof setInterval> | undefined;
   let live = false;
   let generation = 0;
   let debugNextResponse = false;
-  const nextRefresh = new Map<ProviderId, number>();
-  const revisions = new Map<ProviderId, number>();
 
   const stop = (): void => {
     debugNextResponse = false;
@@ -426,6 +501,8 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
     live = false;
     if (timer) clearInterval(timer);
     timer = undefined;
+    runtime?.stop();
+    runtime = undefined;
     controller.stop();
   };
 
@@ -434,33 +511,45 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
     if (ctx.mode !== "tui") return;
     const mine = generation;
     // Passive headers arriving while preferences load are buffered by the
-    // controller, so bookkeeping must be live before the await.
+    // controller and recorded by the runtime, so both exist before the await.
     live = true;
-    nextRefresh.clear();
-    revisions.clear();
+    const current = createRefreshRuntime({
+      scope: getAgentDir(),
+      owner,
+      preferences: () => controller.preferences(),
+      readers: {
+        [PROVIDER.CODEX]: async (signal) =>
+          usageOutcome(
+            PROVIDER.CODEX,
+            await readCodexUsage(ctx, signal),
+            Date.now(),
+          ),
+        [PROVIDER.ANTHROPIC]: async (signal) =>
+          usageOutcome(
+            PROVIDER.ANTHROPIC,
+            await readClaudeUsage(ctx, signal),
+            Date.now(),
+          ),
+      },
+      antigravity,
+      deliver: (result) => {
+        if (mine === generation) controller.update(result);
+      },
+      now: () => Date.now(),
+      random: () => Math.random(),
+    });
+    runtime = current;
     await controller.start(ctx);
     if (mine !== generation) return;
-    const refresh = async (): Promise<void> => {
-      await Promise.all(
-        POLLED.map(async ({ id, read, interval }) => {
-          if (Date.now() < (nextRefresh.get(id) ?? 0)) return;
-          const revision = revisions.get(id) ?? 0;
-          nextRefresh.set(id, Date.now() + interval);
-          const update = await read(ctx);
-          if (mine !== generation || revision !== (revisions.get(id) ?? 0))
-            return;
-          const now = Date.now();
-          nextRefresh.set(id, Math.max(now + interval, update.retryAt ?? 0));
-          controller.update(
-            toQuotaResult(id, update, now, SOURCE.READ_ONLY_ENDPOINT),
-          );
-        }),
-      );
-      // The local tick also refreshes ages and countdowns when nothing is due.
-      if (mine === generation) controller.render();
+    current.start();
+    // The local tick also refreshes ages and countdowns when nothing is due.
+    const refresh = (): void => {
+      if (mine !== generation) return;
+      current.tick();
+      controller.render();
     };
-    void refresh();
-    timer = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+    refresh();
+    timer = setInterval(refresh, REFRESH_INTERVAL_MS);
     timer.unref?.();
   });
 
@@ -497,16 +586,24 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
       );
     }
     if (!live) return;
+    // Only ordinary provider responses define activity, never UI repaint.
+    const provider = ctx.model?.provider;
+    if (provider === "openai" || provider === "openai-codex")
+      runtime?.noteActivity(PROVIDER.CODEX);
+    else if (provider === "anthropic")
+      runtime?.noteActivity(PROVIDER.ANTHROPIC);
+    else if (provider === "antigravity")
+      runtime?.noteActivity(PROVIDER.ANTIGRAVITY);
     const now = Date.now();
-    for (const [legacy, id, interval] of [
-      ["codex", PROVIDER.CODEX, REFRESH_INTERVAL_MS],
-      ["claude", PROVIDER.ANTHROPIC, CLAUDE_REFRESH_INTERVAL_MS],
+    for (const [legacy, id] of [
+      ["codex", PROVIDER.CODEX],
+      ["claude", PROVIDER.ANTHROPIC],
     ] as const) {
       const update = usageFromHeaders(event.headers, legacy, now);
       if (!update) continue;
-      revisions.set(id, (revisions.get(id) ?? 0) + 1);
-      nextRefresh.set(id, now + interval);
       controller.update(toQuotaResult(id, update, now, SOURCE.RESPONSE_EVENT));
+      // After the update: a retained block is re-shown over the new windows.
+      runtime?.observed(id);
     }
   });
 

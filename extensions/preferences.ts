@@ -53,6 +53,11 @@ export interface RefreshPreferences {
   codexSeconds: number;
   claude: ClaudeRefresh;
   antigravity: AntigravityRefresh;
+  /**
+   * Whether a collapsed provider panel keeps refreshing. Independent of the
+   * rendering preference itself; pausing never clears backoff or blocks.
+   */
+  whileCollapsed: boolean;
 }
 
 export interface SubscriptionPreferences {
@@ -95,6 +100,7 @@ export function defaultPreferences(): SubscriptionPreferences {
         activeSeconds: 180,
         idleSeconds: 1200,
       },
+      whileCollapsed: true,
     },
     staleAfterSeconds: 180,
   };
@@ -169,6 +175,10 @@ export function normalizePreferences(raw: unknown): SubscriptionPreferences {
         ),
         idleSeconds: interval(antigravity.idleSeconds, base.idleSeconds, 1200),
       },
+      whileCollapsed:
+        typeof refresh.whileCollapsed === "boolean"
+          ? refresh.whileCollapsed
+          : defaults.refresh.whileCollapsed,
     },
     staleAfterSeconds: interval(
       input.staleAfterSeconds,

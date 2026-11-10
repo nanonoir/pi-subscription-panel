@@ -130,6 +130,7 @@ function productionRunner() {
     setTimeout: (fn, ms) => timers.push({ fn, ms }) - 1,
     clearTimeout: () => env.cleared++,
   }).createAntigravityAdapter({ enabled: true, now: () => timestamp });
+  env.adapter = adapter;
   env.refresh = () => adapter.refresh();
   env.timers = timers;
   return env;
@@ -209,4 +210,183 @@ test("production runner watchdog settles without close and does not re-kill an e
   assert.equal(silent.children[0].stdout.destroyed, 1);
   silent.children[0].emit("close", 0, null);
   assert.equal(silent.cleared, 1);
+});
+
+function abortable() {
+  const listeners = [];
+  const signal = {
+    aborted: false,
+    addEventListener: (_t, fn) => listeners.push(fn),
+    removeEventListener: (_t, fn) => {
+      const i = listeners.indexOf(fn);
+      if (i >= 0) listeners.splice(i, 1);
+    },
+  };
+  signal.listeners = listeners;
+  signal.abort = () => {
+    signal.aborted = true;
+    [...listeners].forEach((fn) => fn());
+  };
+  return signal;
+}
+
+test("poll reports indeterminate failures as manual-retry metadata without HTTP status", async () => {
+  const bad = await createAntigravityAdapter({
+    enabled: true,
+    runner: async () => {
+      throw new Error("HTTP 429 secret");
+    },
+  }).poll();
+  assert.deepEqual(bad.meta, { requireManualRetry: true });
+  assert.equal(bad.result.availability, AVAILABILITY.ERROR);
+  await bad.settled;
+  const odd = await createAntigravityAdapter({
+    enabled: true,
+    runner: async () => "{}",
+    now: () => timestamp,
+  }).poll();
+  assert.deepEqual(odd.meta, { requireManualRetry: true });
+  const ok = await createAntigravityAdapter({
+    enabled: true,
+    runner: async () => report,
+    now: () => timestamp,
+  }).poll();
+  assert.deepEqual(ok.meta, {});
+});
+
+test("poll does not spawn when already aborted and ignores late results after abort", async () => {
+  const signal = abortable();
+  signal.aborted = true;
+  let calls = 0;
+  const adapter = createAntigravityAdapter({
+    enabled: true,
+    runner: async () => (calls++, report),
+  });
+  const pre = await adapter.poll({ signal });
+  assert.equal(pre.meta.cancelled, true);
+  assert.equal(calls, 0);
+  const late = abortable();
+  const out = await createAntigravityAdapter({
+    enabled: true,
+    runner: async () => (late.abort(), report),
+  }).poll({ signal: late });
+  assert.equal(out.meta.cancelled, true);
+});
+
+test("abort kills only the owned child, reports cancellation, and settles after exit", async () => {
+  const env = productionRunner();
+  const signal = abortable();
+  const pending = env.adapter.poll({ signal });
+  const child = env.children[0];
+  child.stdout.emit("data", Buffer.from("secret"));
+  signal.abort();
+  const out = await pending;
+  assert.equal(out.meta.cancelled, true);
+  assert.equal(JSON.stringify(out).includes("secret"), false);
+  assert.deepEqual(child.signals, ["SIGKILL"]);
+  assert.equal(child.stdout.destroyed, 1);
+  assert.equal(signal.listeners.length, 0);
+  let settled = false;
+  out.settled.then(() => (settled = true));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(settled, false);
+  child.emit("exit", null, "SIGKILL");
+  await out.settled;
+  child.emit("close", null, "SIGKILL");
+  signal.abort();
+  child.stdout.emit("data", Buffer.alloc(2000000));
+  assert.deepEqual(child.signals, ["SIGKILL"]);
+});
+
+const flush = () => new Promise((r) => setImmediate(r));
+
+test("settlement is not granted by a timeout or grace timer while the child has not exited", async () => {
+  const env = productionRunner();
+  const signal = abortable();
+  const pending = env.adapter.poll({ signal });
+  signal.abort();
+  const out = await pending;
+  assert.equal(env.timers.length, 1);
+  env.timers[0].fn();
+  let settled = false;
+  out.settled.then(() => (settled = true));
+  await flush();
+  assert.equal(settled, false);
+  env.children[0].emit("close", null, "SIGKILL");
+  await out.settled;
+});
+
+test("child error with a pid (failed kill) does not settle until exit/close", async () => {
+  const env = productionRunner();
+  const pending = env.refresh();
+  const poll = env.adapter.poll();
+  env.children[0].pid = 1;
+  env.children[1].pid = 2;
+  env.children[1].emit("error", new Error("kill EPERM"));
+  const out = await poll;
+  assert.equal(out.result.availability, AVAILABILITY.ERROR);
+  let settled = false;
+  out.settled.then(() => (settled = true));
+  await flush();
+  assert.equal(settled, false);
+  env.timers[1].fn?.();
+  await flush();
+  assert.equal(settled, false);
+  env.children[1].emit("exit", null, "SIGKILL");
+  await out.settled;
+  env.children[0].emit("close", 1, null);
+  await pending;
+});
+
+test("verified spawn failure (no pid) and normal exit settle", async () => {
+  const env = productionRunner();
+  const poll = env.adapter.poll();
+  env.children[0].emit("error", new Error("ENOENT"));
+  const out = await poll;
+  assert.equal(out.result.availability, AVAILABILITY.ERROR);
+  await out.settled;
+  const ok = productionRunner();
+  const good = ok.adapter.poll();
+  ok.children[0].pid = 3;
+  ok.children[0].stdout.emit("data", Buffer.from(report));
+  ok.children[0].emit("close", 0, null);
+  await (
+    await good
+  ).settled;
+});
+
+test("abort after clean completion or before spawn is inert", async () => {
+  const env = productionRunner();
+  const signal = abortable();
+  const pending = env.adapter.poll({ signal });
+  env.children[0].stdout.emit("data", Buffer.from(report));
+  env.children[0].emit("close", 0, null);
+  const out = await pending;
+  assert.equal(out.result.availability, AVAILABILITY.READY);
+  assert.equal(signal.listeners.length, 0);
+  signal.abort();
+  assert.deepEqual(env.children[0].signals, []);
+  await out.settled;
+  const pre = productionRunner();
+  const aborted = abortable();
+  aborted.aborted = true;
+  const res = await pre.adapter.poll({ signal: aborted });
+  assert.equal(res.meta.cancelled, true);
+  assert.equal(pre.children.length, 0);
+});
+
+test("abort of an exited child does not re-kill and timeout is indeterminate, not cancelled", async () => {
+  const env = productionRunner();
+  const signal = abortable();
+  const pending = env.adapter.poll({ signal });
+  env.children[0].emit("exit", 0, null);
+  signal.abort();
+  assert.equal((await pending).meta.cancelled, true);
+  assert.deepEqual(env.children[0].signals, []);
+  const t = productionRunner();
+  const p = t.adapter.poll({ signal: abortable() });
+  t.timers[0].fn();
+  const r = await p;
+  assert.deepEqual(r.meta, { requireManualRetry: true });
+  assert.deepEqual(t.children[0].signals, ["SIGKILL"]);
 });
