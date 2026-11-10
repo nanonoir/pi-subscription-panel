@@ -287,3 +287,9 @@ proved three test panel headings and collapse interaction, not production behavi
 
 The Phase 5 scheduling design is approved but not implemented. Keep this plan active
 until the production manual evidence and remaining acceptance gates are satisfied.
+
+### Delivery follow-up
+
+Final runtime wiring was subsequently merged as PR #13 at `d15e0e4`, after both
+GitHub checks passed. The remaining Phase 4 acceptance items are actual production
+TUI persistence/resize observations and final smoke, not runtime delivery.

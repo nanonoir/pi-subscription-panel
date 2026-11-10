@@ -84,6 +84,14 @@ sanitized success/failure/cancelled outcomes, known auth/rate-limit/manual class
 no windows on failure, validated finite readings, and preserved server deadlines.
 Independent review passed. It is not wired into acquisition or a scheduler yet.
 
+This unit is published for delivery as PR #14. Parent `npm run check` passed all
+91 current tests plus lint, types and formatting. Reload investigation inspected
+installed Pi's Jiti loader (`moduleCache: false`) and shutdown/reload lifecycle.
+An isolated, no-file synthetic test using two fresh installed Jiti instances
+confirmed shared host `globalThis` and `Symbol.for` identity (counter 1 then 2).
+It exercised `evalModule`, not Pi's real `jiti.import` or end-to-end `/reload`;
+retain that limit when implementing and validating the process registry.
+
 Remaining: scheduler engine, process-local reload/exclusion metadata, cancellation
 and structured outcomes in transports, opt-in Antigravity scheduling, manual retry,
 independent refresh-while-collapsed policy, focused integration checks, dependency
