@@ -163,3 +163,10 @@ All 22 actions/controller tests pass locally, plus types, lint, and formatting.
 Deliver actions+their tests/shared fixture first (377 authored lines), then panel
 lifecycle+its tests (588 authored lines). Both remain unwired to the entry point,
 and no live provider/configuration file was accessed during validation.
+
+Preference actions were merged as PR #9 at `d7b0238` after passing CI. The final
+standalone controller unit has 588 authored lines and a passing independent
+re-review. Parent pre-delivery `npm run check` passed all 72 fast tests, formatting,
+lint, and types; the baseline entry point and package/lock remain unchanged.
+Runtime wiring is still pending the OpenAI source decision and subsequent
+integration/real-provider validation. This phase must not be archived as complete.
