@@ -51,6 +51,12 @@ and ordered saves. Opening/cancelling a menu does not write, stale selections ar
 guarded, and protected/failed saves are labelled session-only. It performs no quota
 acquisition and is not registered as a production command until runtime wiring.
 
+`extensions/subscription-panels.ts` composes preferences/actions, response-driven
+Claude parsing, partial observation state, and presentation into a lifecycle
+controller. Generation guards cancel stale startup/menu work, and startup buffers
+retain observations while preferences load. It registers no timers or provider
+queries and is not invoked by the production entry point yet.
+
 ## Target versus current
 
 The [PRD](docs/PRD.md) describes future adapters, interactive provider sections, settings, and refresh hardening. These are target requirements, not the current architecture. The [development guide](docs/DEVELOPMENT.md) records baseline limitations and the manual TUI smoke procedure.

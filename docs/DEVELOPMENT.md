@@ -39,6 +39,12 @@ per-window age, explains missing/non-finite data, and bounds rows to Atelier's
 public limits. Its tests cover actual row truncation preserving the leading
 stale/unknown marker; they do not replace a real narrow-terminal smoke test.
 
+The standalone `subscription-panels.ts` controller composes those foundations.
+Controller tests use real preferences/actions/adapters with injected file access
+and a stubbed host/renderer, covering buffered startup observations, cancelled
+loads, serialized-save/restart ordering, and independent controls. Production
+entry-point wiring and real-renderer integration remain separate validation work.
+
 | Location                                                          | Responsibility                                                                                                               |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `extensions/index.ts`                                             | Existing parsers, OAuth-backed read-only usage calls, refresh loop, response events, panel registration, diagnostic command. |
