@@ -152,3 +152,14 @@ Pure formatting helpers were merged as PR #7 at `637dfe1` after passing CI.
 The subsequent panel-assembly unit contains 580 authored source/test lines and
 has a passing independent final review with all 16 combined format/render tests
 passing. It does not activate the presentation or acquire provider data yet.
+
+Panel assembly was subsequently merged as PR #8 at `ed9c45d` after CI passed.
+The controller corrections now pass independent re-review: startup observations
+are buffered by generation, cancelled starts check generation before any post-save
+read, and deferred load/save regressions cover both paths. Preference command/save
+actions were separated from panel lifecycle with a shared focused test fixture.
+All 22 actions/controller tests pass locally, plus types, lint, and formatting.
+
+Deliver actions+their tests/shared fixture first (377 authored lines), then panel
+lifecycle+its tests (588 authored lines). Both remain unwired to the entry point,
+and no live provider/configuration file was accessed during validation.

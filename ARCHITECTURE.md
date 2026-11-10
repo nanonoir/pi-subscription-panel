@@ -46,6 +46,11 @@ aggregate percentage. Empty/missing/invalid readings are explained without fake
 bars, and a collapsed stale/unknown warning precedes expendable detail so row
 truncation cannot conceal it. The renderer is not wired into the entry point yet.
 
+`extensions/subscription-actions.ts` owns explicit preference command/menu changes
+and ordered saves. Opening/cancelling a menu does not write, stale selections are
+guarded, and protected/failed saves are labelled session-only. It performs no quota
+acquisition and is not registered as a production command until runtime wiring.
+
 ## Target versus current
 
 The [PRD](docs/PRD.md) describes future adapters, interactive provider sections, settings, and refresh hardening. These are target requirements, not the current architecture. The [development guide](docs/DEVELOPMENT.md) records baseline limitations and the manual TUI smoke procedure.
