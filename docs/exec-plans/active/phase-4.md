@@ -106,3 +106,32 @@ ordinary explicit saves. Atomic rename is not a cross-session transaction; a
 concurrent replacement between read-check and rename is not claimed protected.
 Independent review passed with no material issues. Runtime wiring remains out of
 this unit; no real agent-directory file or provider was accessed in tests.
+
+Preferences were delivered as PR #6 and merged at `57e02d7` after passing CI.
+Presentation review then found stale summaries could be hidden by truncation, and
+missing/non-finite data needed explicit explanations. Keep those corrections and
+their regression tests. To remain within the 600-line budget without dropping
+coverage, split pure text/time/freshness formatting from panel assembly into
+separately tested delivery units before wiring the runtime.
+
+An additional read-only Pi 1.5 compatibility check confirmed public APIs remain
+compatible, but the owner's new `openai` subscription path is distinct from legacy
+`openai-codex`. No credential/endpoint substitution is authorized. The owner has
+been asked how to handle absent quota for that path; record the decision before
+adopting a fallback or changing acquisition. Independent presentation work can
+continue without resolving that credential/source gate.
+
+## Presentation unit review
+
+Review found three correctness gaps and their regression coverage was corrected:
+mixed/partial stale readings must stay visible in collapsed summaries, missing
+known windows/pools require an explanation without fake bars, and non-finite
+percentages must be unavailable. A further bounded-row reproduction showed why
+the freshness warning must precede error/clamp detail; the long-row test now
+actually selects an out-of-range tightest window and verifies truncation occurs
+without dropping the leading `STALE/UNKNOWN` marker. Final independent review passed.
+
+Delivery is split into pure `quota-format.ts` helpers/tests (142 authored lines),
+then panel assembly/tests (approximately 580 authored lines), each under 600.
+The parent ran all 16 focused format/presentation tests successfully, plus typecheck
+and formatting. Production integration and actual resize/persistence remain pending.
