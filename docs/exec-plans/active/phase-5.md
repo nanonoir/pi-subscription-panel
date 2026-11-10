@@ -41,18 +41,19 @@ Follow [safe refresh scheduling](../../design-docs/refresh-scheduling.md):
 ## Execution units
 
 - [x] Confirm runtime PR #13 merged and create `feature/subscription-refresh`.
-- [ ] Verify actual extension reload/global-state behavior with source or an
-      isolated synthetic loader test (never start providers or Pi sessions).
-- [ ] Add sanitized poll outcomes and fake-clock scheduler behavior with explicit
+- [x] Investigate reload/global-state behavior with source and an isolated synthetic
+      loader test; actual Pi reload remains unverified.
+- [x] Add sanitized poll outcomes and fake-clock scheduler behavior with explicit
       failure classes, deadlines, in-flight exclusion and manual retry semantics.
-- [ ] Add process-local reload metadata coordination without storing quota values.
-- [ ] Wire transport cancellation/outcomes and root scheduling, opt-in Antigravity,
+- [x] Add process-realm reload metadata coordination without storing quota values.
+- [x] Wire transport cancellation/outcomes and root scheduling, opt-in Antigravity,
       relevant activity, retry controls, and independent collapsed refresh policy.
-- [ ] Validate focused parsing/scheduling/transport/preferences/runtime tests,
+- [x] Validate focused parsing/scheduling/transport/preferences/runtime tests,
       including 429, Retry-After, 401/403, offline/partial data, reload/stop and
       zero inference or query on ordinary UI controls.
-- [ ] Independent review/corrections, docs reconciliation, and size-bounded Git
-      deliveries with passing applicable CI. Each behavior ships with its tests.
+- [ ] Complete documentation reconciliation and any separately authorized delivery
+      and applicable CI; independent implementation review passed after corrections.
+      Behavior and its tests stay together.
 - [ ] Recheck dependency audit and safe package metadata without blind upgrades,
       license assertions, publication, or changes to the owner's global harness.
 - [ ] Complete the combined actual-TUI production smoke with the owner, record
@@ -62,10 +63,12 @@ Follow [safe refresh scheduling](../../design-docs/refresh-scheduling.md):
 
 Use deterministic clock/random/deferred-promise tests and process doubles; no
 sleeping, stress tests, E2E infrastructure, or additional authenticated quota reads.
-The final small suite is pre-PR validation targeting `main`; use focused tests
-while iterating. Document exactly what synthetic checks and actual observations
-prove. Keep each authored PR at most 600 lines; split coherent modules, never move
-related behavioral tests into a test-only follow-up to bypass the budget.
+Use focused tests while iterating and applicable pre-delivery checks. Document
+exactly what synthetic checks and actual observations prove. The self-imposed
+600-line PR limit is impractical for the integrated 2,000-plus-line behavior and
+test dependency: the owner explicitly approved a size exception for one coherent
+reviewed PR rather than artificial splits or test-only follow-ups. This exception
+does not authorize npm publication.
 
 ## Outcome
 
@@ -92,9 +95,24 @@ confirmed shared host `globalThis` and `Symbol.for` identity (counter 1 then 2).
 It exercised `evalModule`, not Pi's real `jiti.import` or end-to-end `/reload`;
 retain that limit when implementing and validating the process registry.
 
-Remaining: scheduler engine, process-local reload/exclusion metadata, cancellation
-and structured outcomes in transports, opt-in Antigravity scheduling, manual retry,
-independent refresh-while-collapsed policy, focused integration checks, dependency
-audit/release preparation, and combined owner TUI acceptance. Do not claim Phase 5
-or the complete PRD finished. Existing provider/model/authentication boundaries,
-owner-approved per-process scope and pause-on-indeterminate-Antigravity policy remain.
+## Current integration checkpoint
+
+The current working tree integrates the scheduler, sanitized outcomes, process-realm
+metadata, supported transport cancellation, opt-in Antigravity, ordinary-response
+activity, manual retry and independent refresh-while-collapsed policy. Late 429/401,
+activity and block-guidance corrections received a final independent **PASS**. The
+validation evidence is synthetic: fake clocks, deferred work, mocked provider and
+process effects, and a synthetic loader; it is not a real TUI or actual Pi reload
+test. No new live provider reads or inference were needed for that evidence.
+
+Exclusion persists after stop/disable until work settles, including the owned CLI
+child; unknown descendants and shared engines are not killed. Known deadlines and
+authentication blocks are retained from late outcomes. Separate Pi processes do
+not coordinate, and actual reload survival is not guaranteed. Controls and defaults
+are documented in the [README](../../../README.md#panel-controls) and
+[development guide](../../DEVELOPMENT.md#refresh-behavior-and-limitations).
+
+Remaining: applicable delivery and CI gates if authorized, dependency audit/release
+preparation, and the combined owner production TUI persistence/resize and refresh
+smoke. Do not claim PR delivery, final acceptance, Phase 5 completion, or the
+complete PRD finished. Publication requires separate authorization.

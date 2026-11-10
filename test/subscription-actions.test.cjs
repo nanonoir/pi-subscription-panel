@@ -168,3 +168,64 @@ test("saves run serially, a throwing save does not block the queue, flush waits"
   await waiting;
   assert.equal(order.at(-1), "end:remaining");
 });
+
+test("refresh settings are independent of expansion, persisted and idempotent", async () => {
+  const { actions, saves, changes } = setup();
+  await actions.command("refresh antigravity on", tui());
+  assert.equal(actions.get().refresh.antigravity.mode, "auto");
+  assert.equal(actions.get().refresh.antigravity.activeSeconds, 180);
+  await actions.command("refresh antigravity on", tui());
+  await actions.command("refresh collapsed off", tui());
+  assert.equal(actions.get().refresh.whileCollapsed, false);
+  assert.deepEqual(actions.get().expandedProviders, ALL);
+  await actions.command("toggle codex", tui());
+  assert.equal(actions.get().refresh.whileCollapsed, false);
+  await actions.command("refresh antigravity off", tui());
+  await actions.flush();
+  assert.equal(actions.get().refresh.antigravity.mode, "off");
+  assert.equal(changes.length, 4);
+  assert.equal(saves.at(-1).refresh.whileCollapsed, false);
+});
+
+test("retry reports each scheduler status without changing preferences", async () => {
+  notices.length = 0;
+  const asked = [];
+  let result = { status: "started" };
+  const actions = createSubscriptionActions({
+    save: async () => ({ saved: true, warnings: [] }),
+    onChange: () => assert.fail("retry must not change preferences"),
+    retry: (id) => (asked.push(id), result),
+  });
+  for (const next of [
+    { status: "started" },
+    { status: "deferred", eligibleAtMs: Date.parse("2026-01-01T12:34:56Z") },
+    { status: "in-flight" },
+    { status: "disabled" },
+    { status: "stopped" },
+  ]) {
+    result = next;
+    await actions.command("retry codex", tui());
+  }
+  assert.deepEqual(asked, Array(5).fill("codex"));
+  assert.match(notices[0], /started/);
+  assert.match(notices[1], /deferred until 12:34:56 UTC.*no request was made/);
+  assert.match(notices[2], /already in progress/);
+  assert.match(notices[3], /off or paused while collapsed/);
+  assert.match(notices[4], /not available right now/);
+});
+
+test("retry without a scheduler and for Claude Code never calls one", async () => {
+  notices.length = 0;
+  const { actions } = setup();
+  await actions.command("retry anthropic", tui());
+  assert.match(notices.at(-1), /not available right now/);
+  const calls = [];
+  const claude = createSubscriptionActions({
+    save: async () => ({ saved: true, warnings: [] }),
+    onChange: () => {},
+    retry: (id) => calls.push(id),
+  });
+  await claude.command("retry claude-code", tui());
+  assert.deepEqual(calls, []);
+  assert.match(notices.at(-1), /never queried/);
+});

@@ -1,11 +1,13 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
+  ANTIGRAVITY_MODE,
   DISPLAY_MODE,
   normalizePreferences,
   type PreferencesSaveResult,
   type SubscriptionPreferences,
 } from "./preferences.ts";
 import { PROVIDER, type ProviderId } from "./quota-contracts.ts";
+import type { RetryResult } from "./refresh-scheduler.ts";
 
 /** Fixed registration and menu order; panel ids live in the presentation. */
 export const PROVIDERS: { id: ProviderId; name: string }[] = [
@@ -16,8 +18,27 @@ export const PROVIDERS: { id: ProviderId; name: string }[] = [
 ];
 
 const USAGE =
-  "Usage: /subscriptions [toggle codex|claude-code|antigravity|anthropic | display remaining|used]";
+  "Usage: /subscriptions [toggle codex|claude-code|antigravity|anthropic | display remaining|used | refresh antigravity|collapsed on|off | retry codex|antigravity|anthropic]";
 const SESSION_ONLY = "The change applies to this session only.";
+
+const utcTime = (epochMs: number): string =>
+  `${new Date(epochMs).toISOString().slice(11, 19)} UTC`;
+
+/** Honest, non-secret wording for an explicit retry request. */
+function retryMessage(name: string, result: RetryResult): string {
+  switch (result.status) {
+    case "started":
+      return `${name}: quota refresh started.`;
+    case "deferred":
+      return `${name}: retry deferred until ${utcTime(result.eligibleAtMs ?? 0)} (minimum gap or server deadline); no request was made yet and it runs on the first refresh tick after that time.`;
+    case "in-flight":
+      return `${name}: a refresh is already in progress.`;
+    case "disabled":
+      return `${name}: refresh is off or paused while collapsed; no request was made.`;
+    default:
+      return `${name}: refresh is not available right now; no request was made.`;
+  }
+}
 
 export type ActionContext = Pick<ExtensionContext, "ui" | "mode">;
 
@@ -27,6 +48,11 @@ export interface SubscriptionActionsOptions {
   ) => Promise<PreferencesSaveResult>;
   /** Called synchronously with the new preferences after every change. */
   onChange: (preferences: SubscriptionPreferences) => void;
+  /**
+   * Explicit user retry of one polling provider; only this action may cause a
+   * quota read from the UI. Undefined when no scheduler is running.
+   */
+  retry?: (id: ProviderId) => RetryResult | undefined;
 }
 
 export function notifyWarning(ctx: ActionContext, message: string): void {
@@ -84,6 +110,47 @@ export function createSubscriptionActions(options: SubscriptionActionsOptions) {
       change({ ...preferences, displayMode }, ctx);
   }
 
+  function setRefresh(
+    target: "antigravity" | "collapsed",
+    on: boolean,
+    ctx: ActionContext,
+  ): void {
+    const { refresh } = preferences;
+    if (target === "collapsed") {
+      if (refresh.whileCollapsed !== on)
+        change(
+          { ...preferences, refresh: { ...refresh, whileCollapsed: on } },
+          ctx,
+        );
+      return;
+    }
+    const mode = on ? ANTIGRAVITY_MODE.AUTO : ANTIGRAVITY_MODE.OFF;
+    if (refresh.antigravity.mode !== mode)
+      change(
+        {
+          ...preferences,
+          refresh: {
+            ...refresh,
+            antigravity: { ...refresh.antigravity, mode },
+          },
+        },
+        ctx,
+      );
+  }
+
+  function retry(id: ProviderId, ctx: ActionContext): void {
+    const name = PROVIDERS.find((item) => item.id === id)?.name ?? id;
+    if (id === PROVIDER.CLAUDE_CODE) {
+      ctx.ui?.notify?.(
+        "Claude Code updates only from its own responses and is never queried.",
+        "info",
+      );
+      return;
+    }
+    const result = options.retry?.(id) ?? { status: "stopped" as const };
+    ctx.ui?.notify?.(retryMessage(name, result), "info");
+  }
+
   function menuOptions(): string[] {
     return [
       ...PROVIDERS.map(
@@ -131,8 +198,22 @@ export function createSubscriptionActions(options: SubscriptionActionsOptions) {
         else setDisplay(preferences.displayMode !== DISPLAY_MODE.USED, ctx);
         return;
       }
-      const [, verb, value] = /^(toggle|display) (\S+)$/.exec(input) ?? [];
+      const refresh = /^refresh (antigravity|collapsed) (on|off)$/.exec(input);
+      if (refresh) {
+        setRefresh(
+          refresh[1] as "antigravity" | "collapsed",
+          refresh[2] === "on",
+          ctx,
+        );
+        return;
+      }
+      const [, verb, value] =
+        /^(toggle|display|retry) (\S+)$/.exec(input) ?? [];
       const provider = PROVIDERS.find((item) => item.id === value);
+      if (verb === "retry" && provider) {
+        retry(provider.id, ctx);
+        return;
+      }
       if (verb === "toggle" && provider) toggle(provider.id, ctx);
       else if (
         verb === "display" &&

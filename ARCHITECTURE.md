@@ -2,9 +2,9 @@
 
 ## Current runtime
 
-Pi loads `extensions/index.ts` as its extension entry point. It composes the provider panel controller and `/subscriptions` controls on TUI startup, starts baseline refreshes, and disposes the controller and timer on shutdown. Explicit panel preferences persist; quota observations remain in memory.
+Pi loads `extensions/index.ts` as its extension entry point. It composes the provider panel controller, refresh runtime and `/subscriptions` controls on TUI startup, and disposes them on shutdown. Explicit panel preferences persist; quota observations remain in memory.
 
-The extension reads the separately supplied Pi `openai-codex` OAuth for Codex quota only, using account metadata from the resolved token first and matched stored metadata as fallback. Models remain on `openai/{model}`. Native Anthropic OAuth is a separate compatibility path. Both use read-only usage requests; Claude Code observations come from ordinary responses. The `/subscription-debug` command arms diagnostics for the next ordinary response; it does not initiate inference. Baseline Codex and native Anthropic refresh intervals are approximately 60 and 30 minutes respectively; Phase 5 scheduling is not implemented.
+The extension reads the separately supplied Pi `openai-codex` OAuth for Codex quota only, using account metadata from the resolved token first and matched stored metadata as fallback. Models remain on `openai/{model}`. Native Anthropic OAuth is a separate compatibility path. Both use read-only usage requests; Claude Code observations come from ordinary responses. The `/subscription-debug` command arms diagnostics for the next ordinary response; it does not initiate inference. Default Codex and native Anthropic minimum gaps are 60 seconds and 30 minutes; Antigravity polling is opt-in.
 
 The extension depends on Pi's extension API and Atelier's panel API; `types/pi-atelier.d.ts` supplies a local compile-time declaration for the latter. Tests transpile the runtime into a VM and mock external interfaces, so they do not establish live TUI compatibility.
 
@@ -28,7 +28,7 @@ It uses the existing `AGY_BIN`/PATH selection and inherited environment, with no
 shell, ignored stdin/stderr, a one-MiB stdout cap, and a 35-second watchdog. Failure
 settles without waiting for stream closure, destroys owned stdout, and signals
 only the direct child; shared engines/unknown descendants are never terminated.
-It is disabled by default and not invoked by the entry point or any timer yet.
+It is disabled by default; the refresh runtime invokes it only when opted in and eligible.
 
 `extensions/preferences.ts` owns schema-1 global preferences at the reserved Pi
 agent-directory path. Reads never write; explicit saves normalize known settings
@@ -54,8 +54,15 @@ acquisition; the production entry point registers the controls.
 Claude parsing, partial observation state, and presentation into a lifecycle
 controller. Generation guards cancel stale startup/menu work, and startup buffers
 retain observations while preferences load. It registers no timers or provider
-queries itself; the production entry point invokes it and owns baseline refreshes.
+queries itself; the production entry point invokes it and owns the refresh runtime.
+
+`extensions/refresh-scheduler.ts` and `extensions/refresh-runtime.ts` coordinate
+polling, activity, retry deadlines and manual blocks. A process-realm registry holds
+only scheduling metadata; separate processes do not coordinate, and survival across
+actual Pi reloads is not established. Stop/disable aborts supported work, with
+exclusion retained until settlement (including the owned Antigravity child); stale
+controllers cannot publish. Claude Code is never a polling job.
 
 ## Target versus current
 
-The [PRD](docs/PRD.md) describes target requirements, including pending refresh hardening and automatic Antigravity acquisition. The [Phase 5 design](docs/design-docs/refresh-scheduling.md) is approved but not implemented. The [development guide](docs/DEVELOPMENT.md) records limitations and the pending production TUI smoke procedure.
+The [PRD](docs/PRD.md) describes target requirements; the [Phase 5 design](docs/design-docs/refresh-scheduling.md) records refresh decisions. The [development guide](docs/DEVELOPMENT.md) records synthetic validation limits and the pending production TUI smoke procedure.

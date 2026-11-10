@@ -13,13 +13,15 @@ const START = Date.parse("2026-01-01T12:00:00Z");
  *
  * Options: `entry` (module name, default "index"), `expose` (extra exports to
  * attach to the entry), `credential` (stored credential), `fetch`, and
- * `readFile` (fs/promises override; defaults to ENOENT).
+ * `readFile` (fs/promises override; defaults to ENOENT), and `spawn`
+ * (child_process override; defaults to throwing).
  */
 function loadRuntime(options = {}) {
   const env = {
     now: START,
     registrations: [],
     intervals: [],
+    timeouts: [],
     requests: [],
     fileCalls: [],
   };
@@ -56,6 +58,14 @@ function loadRuntime(options = {}) {
         };
       },
     },
+    // A real Antigravity CLI must never run; tests provide a fake `spawn`.
+    "node:child_process": {
+      spawn:
+        options.spawn ??
+        (() => {
+          throw new Error("Unexpected spawn");
+        }),
+    },
     "node:fs/promises": {
       readFile: options.readFile ?? missing,
       mkdir: record("mkdir"),
@@ -66,6 +76,7 @@ function loadRuntime(options = {}) {
   };
   const sandbox = {
     Buffer,
+    AbortController,
     AbortSignal,
     DOMException,
     structuredClone,
@@ -74,6 +85,16 @@ function loadRuntime(options = {}) {
       env.requests.push(args[0]);
       if (!options.fetch) throw new Error("Unexpected request");
       return options.fetch(...args);
+    },
+    // Deterministic: timeouts are recorded and only fire when a test says so.
+    process: { env: {} },
+    setTimeout(fn, ms) {
+      const timer = { fn, ms, cleared: false };
+      env.timeouts.push(timer);
+      return timer;
+    },
+    clearTimeout(timer) {
+      if (timer) timer.cleared = true;
     },
     setInterval(fn) {
       const timer = { fn, cleared: false, unref() {} };

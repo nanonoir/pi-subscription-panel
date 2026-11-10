@@ -29,6 +29,7 @@ import {
   PROVIDERS,
   createSubscriptionActions,
   notifyWarning,
+  type SubscriptionActionsOptions,
 } from "./subscription-actions.ts";
 
 const PANEL_SOURCE = "subscription-limits";
@@ -41,6 +42,10 @@ export interface SubscriptionPanelDeps {
     preferences: SubscriptionPreferences,
   ) => Promise<PreferencesSaveResult>;
   now?: () => number;
+  /** Explicit user retry of a polling provider (the only UI-driven read). */
+  retry?: SubscriptionActionsOptions["retry"];
+  /** Called after a preference change, with the new normalized preferences. */
+  onPreferencesChange?: (preferences: SubscriptionPreferences) => void;
 }
 
 function initialState(
@@ -75,7 +80,33 @@ export function createSubscriptionPanels(
   let starting = false;
   let generation = 0;
 
-  const actions = createSubscriptionActions({ save, onChange: () => render() });
+  let antigravityMode: string | undefined;
+
+  /** Opting in or out changes only the Antigravity state text; pools stay. */
+  function syncAntigravity(preferences: SubscriptionPreferences): void {
+    const mode = preferences.refresh.antigravity.mode;
+    if (mode === antigravityMode) return;
+    antigravityMode = mode;
+    const current = states.get(PROVIDER.ANTIGRAVITY);
+    if (current)
+      states.set(
+        PROVIDER.ANTIGRAVITY,
+        mergeObservation(
+          current,
+          initialState(PROVIDER.ANTIGRAVITY, preferences),
+        ),
+      );
+  }
+
+  const actions = createSubscriptionActions({
+    save,
+    retry: deps.retry,
+    onChange: (preferences) => {
+      syncAntigravity(preferences);
+      render();
+      deps.onPreferencesChange?.(preferences);
+    },
+  });
 
   function contribution(id: ProviderId) {
     const preferences = actions.get();
@@ -134,6 +165,7 @@ export function createSubscriptionPanels(
       }));
       if (mine !== generation) return;
       actions.configure(loaded);
+      antigravityMode = actions.get().refresh.antigravity.mode;
       for (const warning of loaded.warnings)
         notifyWarning(ctx, warning.message);
       for (const { id } of PROVIDERS) {
@@ -154,6 +186,8 @@ export function createSubscriptionPanels(
     stop: cleanup,
     update,
     render,
+    /** Current normalized preferences (defaults until `start` loads them). */
+    preferences: (): SubscriptionPreferences => actions.get(),
 
     observeMessage(event: unknown): void {
       if (active || starting) update(claude.observeResponse(event));
