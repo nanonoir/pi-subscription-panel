@@ -33,6 +33,12 @@ argv/bounds, sanitized errors, and the production runner with deterministic proc
 and timer doubles. No test starts the real CLI. Presentation and scheduling remain
 later work; current user-visible support remains the baseline.
 
+The pure `quota-presentation.ts` renderer is also tested separately from the entry
+point. It labels used/remaining values, retains independent pool identities and
+per-window age, explains missing/non-finite data, and bounds rows to Atelier's
+public limits. Its tests cover actual row truncation preserving the leading
+stale/unknown marker; they do not replace a real narrow-terminal smoke test.
+
 | Location                                                          | Responsibility                                                                                                               |
 | ----------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | `extensions/index.ts`                                             | Existing parsers, OAuth-backed read-only usage calls, refresh loop, response events, panel registration, diagnostic command. |

@@ -40,6 +40,12 @@ The entry point is not wired to this preferences module yet.
 formatting with caller-provided time and age threshold. It does not fetch data or
 read the clock. Panel assembly and runtime wiring are separate delivery units.
 
+`extensions/quota-presentation.ts` assembles bounded provider contributions from
+quota results and explicit display options. Independent pools never become an
+aggregate percentage. Empty/missing/invalid readings are explained without fake
+bars, and a collapsed stale/unknown warning precedes expendable detail so row
+truncation cannot conceal it. The renderer is not wired into the entry point yet.
+
 ## Target versus current
 
 The [PRD](docs/PRD.md) describes future adapters, interactive provider sections, settings, and refresh hardening. These are target requirements, not the current architecture. The [development guide](docs/DEVELOPMENT.md) records baseline limitations and the manual TUI smoke procedure.
