@@ -10,7 +10,7 @@
 
 ## 1. Product principles
 
-1. **Preserve the working harness.** Do not replace, install, remove, reauthenticate, or modify the existing `openai-codex`, `pi-claude-code`, or Antigravity bridge providers.
+1. **Preserve the working harness.** Do not replace, install, remove, reauthenticate, or modify the existing `openai`, `pi-claude-code`, or Antigravity bridge providers. The owner confirmed `openai/{model}` is canonical; the copied `openai-codex` integration is legacy, not a required login or model namespace.
 2. **Read only.** Never write credentials, change selected models, intercept prompts, inject tool calls, or initiate model inference to measure quotas.
 3. **Truthful metrics.** Distinguish reported values from estimates and missing data. Never infer a percentage from token usage or show fabricated zeros.
 4. **Low overhead.** No polling loops that block Pi, no unnecessary processes, and no duplicate requests across active Pi sessions where coordination is feasible.
@@ -21,7 +21,7 @@
 
 ### In scope
 
-- Codex subscription quota via the existing Pi `openai-codex` login.
+- OpenAI/Codex subscription quota associated with the existing Pi `openai/{model}` integration and login. The internal panel/provider ID `codex` is a quota-domain label, not a model-routing namespace.
 - Claude Code subscription quota using an authorized read-only mechanism associated with the existing `pi-claude-code` / Claude Code CLI installation, **not** native Pi Anthropic OAuth.
 - Google Antigravity quota associated with the **exact installed Antigravity bridge package**, with no replacement provider or authentication flow.
 - Five-hour and weekly windows **when the provider actually reports them**, percent consumed/remaining, reset times, data freshness, and unavailable/error states.
@@ -110,8 +110,9 @@ Implementation can improve types after source verification; all percentages must
 
 ### Codex
 
-- Preserve and regression-test original `openai-codex` quota acquisition behavior.
-- Favor Pi's existing OAuth session and quota response headers. Do not use the separate `openai` ChatGPT login as an equivalent to `openai-codex` unless verified.
+- Use the owner's existing canonical Pi `openai` integration. Do not require `openai-codex`, change selected models, create another login, or migrate credentials to make the panel work.
+- Retain useful baseline parsing/regression coverage, but do not preserve an incorrect legacy provider requirement in the new runtime. Obtain quota only from verified subscription metadata or a read-only source authorized for the existing login.
+- Correcting the model/provider identity does not by itself authorize sending its credentials to the copied legacy quota endpoint. Verify the source and credential/host boundary before making a request; never infer subscription percentage from API token/request limits.
 - Avoid storing OAuth tokens or account identifiers in panel state.
 
 ### Claude Code (`pi-claude-code`)

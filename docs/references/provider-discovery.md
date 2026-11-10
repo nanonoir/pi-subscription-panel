@@ -141,7 +141,88 @@ quota schema or machine-readable usage endpoint was found. Per-turn tokens and
 billing labels are not subscription percentages. Do not substitute credentials,
 infer percentages, or generate inference solely to inspect quota.
 
-**Owner decision pending:** retain the existing legacy quota path with an honest
-unavailable state where the current login exposes no compatible quota, or investigate
-another read-only source for the new `openai` path before adopting that fallback.
-No auth/client/provider/model change or new quota probe has been performed.
+**Owner clarification:** `openai/{model}` is the correct current integration; the
+earlier `openai-codex` path was an incorrect legacy implementation, not a namespace
+the user should select. That resolves provider identity: support the existing
+`openai` login without reauthentication or model changes. The internal `codex`
+quota-result ID may remain for compatibility, but is not a login requirement.
+
+The public-source comparison below did not establish a compatible quota signal.
+Correcting the provider name does not establish endpoint/token equivalence. A later
+owner-authorized single probe is recorded separately below; no unavailable fallback
+is approved and no login/provider/model configuration was changed.
+
+### Community implementations supplied by the owner
+
+Public-source comparison pinned the inspected revisions:
+
+| Project                    | Revision                                   | Credential source                                                                  |
+| -------------------------- | ------------------------------------------ | ---------------------------------------------------------------------------------- |
+| `patlux/pi-chatgpt-limit`  | `cff2c8da7b37e154d9f2776527be1e4ceeadf8fc` | `openai-codex` models/variants, resolved through Pi.                               |
+| `inouemoby/pi-codex-usage` | `4a1d945601b1c2fcc0122ac19a6e762c0d9d70fd` | Stored `openai-codex`, then Codex CLI credentials; legacy OAuth refresh/writeback. |
+| `mtrojnar/pi-usage`        | `686724e0332f5a3a5aa91519637ce425e107aa04` | Pi-resolved `openai-codex` and corresponding account metadata.                     |
+
+All use the legacy ChatGPT WHAM endpoint; none of those inspected paths demonstrates
+support for the current `openai` direct-sharing grant. A broad display predicate
+does not change a legacy credential source. Do not copy alternate credential
+fallbacks, credential writeback, model-context changes, or inference probes from
+these projects. They are evidence of the response format, not token compatibility.
+
+The installed `ModelRegistry.getApiKeyForProvider` does exist, but calling it with
+`openai-codex` resolves that exact legacy provider. `getProviderAuth("openai")`
+is the appropriate identity for the user's current session; its OAuth resolution
+may refresh through Pi's existing mechanism under a lock. Inspection found nested
+`pi-ai` 1.5.1, so coding-agent and nested library versions must not be assumed equal.
+
+The current flow uses resource `https://api.openai.com/v1`, scope
+`chatgpt.tokens.use.direct`, and the account OAuth token endpoint. The legacy
+flow has a different token endpoint, fixed client ID, and scopes. These are distinct
+flows; their public source alone does not establish whether WHAM accepts the
+current token or reports the relevant account's subscription pools.
+
+Codex percentages/resets remain a mandatory requirement, not an approved unavailable
+fallback. Any empirical WHAM validation requires explicit owner authorization for
+the exact endpoint/token use, possible normal Pi-managed renewal, and sanitized
+response handling. One such authorization and its result are recorded below.
+
+### Owner-authorized single WHAM probe
+
+The owner explicitly authorized one quota GET to
+`https://chatgpt.com/backend-api/wham/usage` using the existing `openai` OAuth
+resolved by installed Pi, including possible normal SDK-managed renewal. A focused
+independent safety review passed before execution. The diagnostic used
+`ModelRuntime.create({ modelsPath: null, refreshOnCreate: false, allowModelNetwork: false })`
+and `getAuth("openai", { signal })`, without starting a Pi session or model request.
+It required an OAuth result and never fell back to another provider or credential.
+
+Observed result:
+
+- Exactly **one** quota GET was attempted, with a ten-second timeout and redirects
+  rejected. No retry or alternate endpoint was used.
+- The existing `openai` OAuth was resolved, but no account header was obtainable
+  from its resolved headers/access-token metadata in this diagnostic. No alternate
+  credential file was inspected to obtain an account ID.
+- The endpoint returned **HTTP 401**. The error body was cancelled without printing
+  or persisting it. No valid quota percentages or reset timestamps were obtained.
+- Output contained only the provider label, request count, account-header-present
+  boolean, HTTP status, and a generic stopped message. No credentials, account IDs,
+  raw response bodies, or exception details were exposed. Pending SDK credential
+  writes were allowed to settle; whether a normal refresh occurred was not logged.
+
+This proves rejection of this exact request, not a universal impossibility or the
+precise reason (grant versus account-header requirements was not established).
+Further quota requests, credential-source changes, logins, CLI installation, and
+inference probes are not authorized by the single-probe permission.
+
+A post-probe **public-code-only** check of installed
+`pi-ai/dist/auth/oauth/openai-chatgpt.js:136–170,259–260` found that the standard
+credential constructor retains access/refresh/expiry/clientId/scopes, not an account
+ID or the ID token. Pi checks that an ID token was returned but intentionally does
+not use it for profile identification; `toAuth` returns the access token only.
+This explains why an account header is not supplied by that standard API contract;
+it does not independently identify the cause of the HTTP 401. No private credential
+store was inspected to obtain an identifier after the failed request.
+
+**Functional blocker:** the owner requires real Codex percentages/resets. This
+requirement is not satisfied, and an unavailable fallback is not approved. Runtime
+activation must not be represented as complete while this source remains unresolved.

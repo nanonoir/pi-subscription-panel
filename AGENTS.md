@@ -1,6 +1,6 @@
 # Pi Subscription Panel
 
-Read-only subscription usage panel for Pi and Pi Atelier. The existing baseline supports Codex and native Anthropic OAuth; Claude Code and Antigravity are planned, not implemented.
+Read-only subscription usage panel for Pi and Pi Atelier. The copied runtime has legacy Codex and native Anthropic OAuth paths; new provider/UI modules are tested but not wired in yet. The owner requires existing `/login openai` for Codex: one authorized WHAM probe returned 401, so its real quota source remains a functional blocker. Do not require `openai-codex`, another CLI/login, or invent percentages.
 
 ## Stack and structure
 
