@@ -1,6 +1,6 @@
 # Pi Subscription Panel
 
-Read-only subscription usage panel for Pi and Pi Atelier. The copied runtime has legacy Codex and native Anthropic OAuth paths; new provider/UI modules are tested but not wired in yet. The owner requires existing `/login openai` for Codex: one authorized WHAM probe returned 401, so its real quota source remains a functional blocker. Do not require `openai-codex`, another CLI/login, or invent percentages.
+Read-only subscription usage panel for Pi and Pi Atelier. Models keep the canonical `openai/{model}` integration. The owner additionally signed into Pi's OpenAI Codex provider for quota reads only: one authorized WHAM probe returned 200 with real five-hour/weekly percentages and resets. Use that existing `openai-codex` OAuth only for quota, never switch execution/authentication or install another CLI. New provider/UI foundations are tested; production wiring is in progress.
 
 ## Stack and structure
 

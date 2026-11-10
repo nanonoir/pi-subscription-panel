@@ -226,3 +226,26 @@ store was inspected to obtain an identifier after the failed request.
 **Functional blocker:** the owner requires real Codex percentages/resets. This
 requirement is not satisfied, and an unavailable fallback is not approved. Runtime
 activation must not be represented as complete while this source remains unresolved.
+
+### Subsequent owner-supplied Pi Codex quota session
+
+The owner then chose to sign into **OpenAI Codex through Pi's official `/login`**
+and explicitly authorized one new validation of that session. This is an approved
+scope change: keep `openai/{model}` and the existing `openai` login for execution,
+but read Codex account quotas through the separate existing `openai-codex` OAuth.
+No other CLI, model/provider replacement, or agent-managed login was introduced.
+
+The same bounded SDK pattern resolved only `openai-codex` OAuth. Account metadata
+was obtained from that resolved token's own validated claim (never another
+provider's credential), and exactly one fixed WHAM GET returned **HTTP 200**.
+The payload contained both 18,000-second and 604,800-second windows, finite reported
+used percentages, and absolute reset timestamps. Live values and account IDs are
+not stored here. No inference, redirect, retry, raw-body logging, or automatic
+polling was performed during validation; pending normal SDK writes were settled.
+
+This resolves the mandatory Codex **source** blocker for the owner-approved quota
+session. It does not prove the earlier `openai` grant is compatible with WHAM, verify
+identity equality between the two sessions, or measure an app-specific allowance
+of the direct-sharing integration. Clearly identify the quota source; do not alter
+execution or silently exchange credentials. Runtime integration, safe scheduling,
+and final real-panel validation still need implementation.

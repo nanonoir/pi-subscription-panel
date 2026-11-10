@@ -7,7 +7,7 @@ A read-only subscription usage panel for the [Pi](https://pi.dev/) TUI and
 
 | Integration                        | Status                                                                                         |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Codex                              | Required; quota access for the existing `/login openai` session is still unresolved.           |
+| Codex                              | Pi OpenAI Codex OAuth reads quotas; models keep `openai/{model}`.                              |
 | Native Anthropic OAuth             | Preserves the upstream `anthropic` quota integration. This is **not Claude Code CLI support**. |
 | Claude Code CLI / `pi-claude-code` | **Planned**, not implemented or verified.                                                      |
 | Antigravity bridge                 | **Planned**, not implemented.                                                                  |
@@ -50,16 +50,18 @@ the commands above install from your local checkout.
 The baseline reads existing OAuth sessions and queries these **undocumented**
 usage interfaces; they are not guaranteed public APIs:
 
-- Copied legacy Codex path: `https://chatgpt.com/backend-api/wham/usage`.
+- Codex quota source (Pi Codex OAuth only): `https://chatgpt.com/backend-api/wham/usage`.
 - Native Anthropic: `https://api.anthropic.com/api/oauth/usage`.
 
 It also consumes recognized quota headers from ordinary provider responses.
 It does not generate inference requests to measure quota or manage authentication.
-API-key credentials are not used for subscription requests. The owner's canonical
-integration is `/login openai`; do not switch providers or create another login
-for this panel. One explicitly authorized WHAM request using that existing session
-returned HTTP 401. This remains a functional blocker, not completed Codex support;
-see [the source investigation](docs/references/provider-discovery.md).
+API-key credentials are not used for subscription requests. Model execution keeps
+the owner's canonical `/login openai` session and `openai/{model}` names. A quota
+probe with that direct-sharing token returned 401; do not forward it to WHAM.
+The owner then supplied a separate official Pi **OpenAI Codex** OAuth session for
+quota reads only. Its single authorized probe returned 200 with real five-hour and
+weekly percentages and reset timestamps. No other CLI or model switch is needed;
+see [the source investigation](docs/references/provider-discovery.md) for limits.
 
 Requests reject redirects and use a 10-second timeout. Quota state stays in memory;
 credentials and account identifiers are not displayed or persisted in panel state.
