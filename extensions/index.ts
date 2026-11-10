@@ -3,7 +3,9 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { readStoredCredential } from "@earendil-works/pi-coding-agent";
-import { registerSidebarPanel } from "pi-atelier/extensions/index.ts";
+import { toQuotaResult } from "./legacy-quota.ts";
+import { PROVIDER, SOURCE, type ProviderId } from "./quota-contracts.ts";
+import { createSubscriptionPanels } from "./subscription-panels.ts";
 
 type UsageWindow = {
   usedPercent: number;
@@ -23,18 +25,11 @@ type ProviderUsage = {
   retryAt?: number;
 };
 
-type UsageSnapshot = {
-  codex: ProviderUsage;
-  claude: ProviderUsage;
-};
-
 type JsonRecord = Record<string, unknown>;
 const REFRESH_INTERVAL_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 10_000;
 const CLAUDE_REFRESH_INTERVAL_MS = 30 * 60_000;
 const RATE_LIMIT_BACKOFF_MS = 5 * 60_000;
-const PANEL_ID = "subscription:limits" as const;
-const PANEL_SOURCE = "subscription-limits";
 
 class UsageHttpError extends Error {
   constructor(
@@ -280,22 +275,18 @@ async function readCodexUsage(ctx: ExtensionContext): Promise<ProviderUsage> {
     const providerAuth =
       await ctx.modelRegistry.getProviderAuth("openai-codex");
     const accessToken = providerAuth?.auth.apiKey;
-    if (providerAuth?.source !== "OAuth" || !accessToken) {
-      const openaiAuth = await ctx.modelRegistry.getProviderAuth("openai");
-      return {
-        error:
-          openaiAuth?.source === "OAuth"
-            ? "OAuth openai: cuotas no expuestas"
-            : "sin sesión OpenAI Codex",
-      };
-    }
+    if (providerAuth?.source !== "OAuth" || !accessToken)
+      return { error: "sin sesión de cuota OpenAI Codex" };
     const credential = readStoredCredential("openai-codex");
+    // Stored metadata is only trusted when it belongs to the resolved token.
     const accountId =
-      credential?.type === "oauth" &&
+      accountIdFromAccessToken(accessToken) ??
+      (credential?.type === "oauth" &&
+      credential.access === accessToken &&
       typeof credential.accountId === "string" &&
       credential.accountId
         ? credential.accountId
-        : accountIdFromAccessToken(accessToken);
+        : undefined);
     if (!accountId) return { error: "token sin ID de cuenta Codex" };
     const payload = await fetchJson(
       "https://chatgpt.com/backend-api/wham/usage",
@@ -345,17 +336,6 @@ function usageFailure(error: unknown): ProviderUsage {
           ),
         }
       : {}),
-  };
-}
-
-function mergeUsage(
-  previous: ProviderUsage,
-  update: ProviderUsage,
-): ProviderUsage {
-  return {
-    ...update,
-    fiveHour: update.fiveHour ?? previous.fiveHour,
-    weekly: update.weekly ?? previous.weekly,
   };
 }
 
@@ -422,193 +402,75 @@ function usageFromHeaders(
   return windows.fiveHour || windows.weekly ? windows : undefined;
 }
 
-function formatCountdown(resetsAt: number, now: number): string {
-  const minutesRemaining = Math.max(0, Math.ceil((resetsAt - now) / 60_000));
-  const hours = Math.floor(minutesRemaining / 60);
-  const minutes = minutesRemaining % 60;
-  if (hours >= 24) {
-    const days = Math.floor(hours / 24);
-    const remainingHours = hours % 24;
-    return `${days}d ${remainingHours}h`;
-  }
-  if (hours > 0) return `${hours}h ${minutes}m`;
-  return `${minutes}m`;
-}
-
-type PanelKeyValue = {
-  label: string;
-  value: string;
-  labelRole?: "primary" | "muted";
-  valueRole: "primary" | "muted" | "input" | "output" | "caution" | "warning";
-  progress?: number;
-};
-
-function formatWindowRows(
-  window: UsageWindow | undefined,
-  provider: ProviderUsage,
-  period: "5h" | "1w",
-  providerRole: "input" | "output",
-  now: number,
-): PanelKeyValue[] {
-  if (!window) {
-    const windowName = period === "5h" ? "fiveHour" : "weekly";
-    const fallback =
-      period === "5h" ? "ventana 5h ausente" : "ventana semanal ausente";
-    const error =
-      provider.windowErrors?.[windowName] ?? provider.error ?? fallback;
-    return [
-      {
-        label: period,
-        value: "n/d",
-        labelRole: "muted",
-        valueRole: "warning",
-        progress: 0,
-      },
-      { label: "", value: error, valueRole: "warning" },
-    ];
-  }
-
-  const percent = Math.max(0, window.usedPercent);
-  const role =
-    percent >= 90 ? "warning" : percent >= 70 ? "caution" : providerRole;
-  const reset =
-    window.resetsAt === undefined
-      ? "reinicio n/d"
-      : `reinicio ${formatCountdown(window.resetsAt, now)}`;
-  return [
-    {
-      label: period,
-      labelRole: "muted",
-      value: `${percent.toFixed(1)}%`,
-      valueRole: role,
-      progress: Math.min(1, percent / 100),
-    },
-    { label: "", value: reset, valueRole: "muted" },
-    ...(provider.error
-      ? [
-          {
-            label: "",
-            value: `dato anterior · ${provider.error}`,
-            valueRole: "warning" as const,
-          },
-        ]
-      : []),
-  ];
-}
-
-function buildPanel(snapshot: UsageSnapshot): {
-  id: typeof PANEL_ID;
-  title: string;
-  role: "context";
-  rows: string[];
-  keyValues: PanelKeyValue[];
-} {
-  const now = Date.now();
-  const keyValues: PanelKeyValue[] = [
-    { label: "Codex", value: "", labelRole: "primary", valueRole: "primary" },
-    ...formatWindowRows(
-      snapshot.codex.fiveHour,
-      snapshot.codex,
-      "5h",
-      "input",
-      now,
-    ),
-    ...formatWindowRows(
-      snapshot.codex.weekly,
-      snapshot.codex,
-      "1w",
-      "input",
-      now,
-    ),
-    { label: "Claude", value: "", labelRole: "primary", valueRole: "primary" },
-    ...formatWindowRows(
-      snapshot.claude.fiveHour,
-      snapshot.claude,
-      "5h",
-      "output",
-      now,
-    ),
-    ...formatWindowRows(
-      snapshot.claude.weekly,
-      snapshot.claude,
-      "1w",
-      "output",
-      now,
-    ),
-  ];
-  return {
-    id: PANEL_ID,
-    title: "Subscription",
-    role: "context",
-    rows: keyValues.map(({ label, value }) => `${label} ${value}`.trim()),
-    keyValues,
-  };
-}
+const POLLED = [
+  { id: PROVIDER.CODEX, read: readCodexUsage, interval: REFRESH_INTERVAL_MS },
+  {
+    id: PROVIDER.ANTHROPIC,
+    read: readClaudeUsage,
+    interval: CLAUDE_REFRESH_INTERVAL_MS,
+  },
+] as const;
 
 export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
-  let panel: ReturnType<typeof registerSidebarPanel> | undefined;
-  let refreshTimer: ReturnType<typeof setInterval> | undefined;
-  let refreshGeneration = 0;
+  const controller = createSubscriptionPanels(pi);
+  let timer: ReturnType<typeof setInterval> | undefined;
+  let live = false;
+  let generation = 0;
   let debugNextResponse = false;
-  let snapshot: UsageSnapshot = { codex: {}, claude: {} };
-  let nextRefresh = { codex: 0, claude: 0 };
-  let revisions = { codex: 0, claude: 0 };
+  const nextRefresh = new Map<ProviderId, number>();
+  const revisions = new Map<ProviderId, number>();
 
   const stop = (): void => {
     debugNextResponse = false;
-    refreshGeneration += 1;
-    if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = undefined;
-    panel?.dispose();
-    panel = undefined;
+    generation += 1;
+    live = false;
+    if (timer) clearInterval(timer);
+    timer = undefined;
+    controller.stop();
   };
 
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
     stop();
     if (ctx.mode !== "tui") return;
-    snapshot = {
-      codex: { error: "cargando" },
-      claude: { error: "cargando" },
-    };
-    nextRefresh = { codex: 0, claude: 0 };
-    revisions = { codex: 0, claude: 0 };
-    panel = registerSidebarPanel(pi, buildPanel(snapshot), {
-      source: PANEL_SOURCE,
-    });
-    const generation = refreshGeneration;
+    const mine = generation;
+    // Passive headers arriving while preferences load are buffered by the
+    // controller, so bookkeeping must be live before the await.
+    live = true;
+    nextRefresh.clear();
+    revisions.clear();
+    await controller.start(ctx);
+    if (mine !== generation) return;
     const refresh = async (): Promise<void> => {
       await Promise.all(
-        (["codex", "claude"] as const).map(async (provider) => {
-          if (Date.now() < nextRefresh[provider]) return;
-          const revision = revisions[provider];
-          const interval =
-            provider === "claude"
-              ? CLAUDE_REFRESH_INTERVAL_MS
-              : REFRESH_INTERVAL_MS;
-          nextRefresh[provider] = Date.now() + interval;
-          const update = await (provider === "codex"
-            ? readCodexUsage(ctx)
-            : readClaudeUsage(ctx));
-          if (
-            generation !== refreshGeneration ||
-            !panel ||
-            revision !== revisions[provider]
-          )
+        POLLED.map(async ({ id, read, interval }) => {
+          if (Date.now() < (nextRefresh.get(id) ?? 0)) return;
+          const revision = revisions.get(id) ?? 0;
+          nextRefresh.set(id, Date.now() + interval);
+          const update = await read(ctx);
+          if (mine !== generation || revision !== (revisions.get(id) ?? 0))
             return;
-          snapshot[provider] = mergeUsage(snapshot[provider], update);
-          nextRefresh[provider] = Math.max(
-            Date.now() + interval,
-            update.retryAt ?? 0,
+          const now = Date.now();
+          nextRefresh.set(id, Math.max(now + interval, update.retryAt ?? 0));
+          controller.update(
+            toQuotaResult(id, update, now, SOURCE.READ_ONLY_ENDPOINT),
           );
-          panel.update(buildPanel(snapshot));
         }),
       );
-      if (generation === refreshGeneration && panel)
-        panel.update(buildPanel(snapshot));
+      // The local tick also refreshes ages and countdowns when nothing is due.
+      if (mine === generation) controller.render();
     };
     void refresh();
-    refreshTimer = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
-    refreshTimer.unref?.();
+    timer = setInterval(() => void refresh(), REFRESH_INTERVAL_MS);
+    timer.unref?.();
+  });
+
+  pi.on("message_end", (event) => {
+    controller.observeMessage(event);
+  });
+
+  pi.registerCommand("subscriptions", {
+    description: "Show or change subscription quota panel details",
+    handler: (args, ctx) => controller.command(args, ctx),
   });
 
   pi.registerCommand("subscription-debug", {
@@ -634,20 +496,18 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
         "info",
       );
     }
-    if (!panel) return;
+    if (!live) return;
     const now = Date.now();
-    for (const provider of ["codex", "claude"] as const) {
-      const update = usageFromHeaders(event.headers, provider, now);
+    for (const [legacy, id, interval] of [
+      ["codex", PROVIDER.CODEX, REFRESH_INTERVAL_MS],
+      ["claude", PROVIDER.ANTHROPIC, CLAUDE_REFRESH_INTERVAL_MS],
+    ] as const) {
+      const update = usageFromHeaders(event.headers, legacy, now);
       if (!update) continue;
-      revisions[provider] += 1;
-      snapshot[provider] = mergeUsage(snapshot[provider], update);
-      nextRefresh[provider] =
-        now +
-        (provider === "claude"
-          ? CLAUDE_REFRESH_INTERVAL_MS
-          : REFRESH_INTERVAL_MS);
+      revisions.set(id, (revisions.get(id) ?? 0) + 1);
+      nextRefresh.set(id, now + interval);
+      controller.update(toQuotaResult(id, update, now, SOURCE.RESPONSE_EVENT));
     }
-    panel.update(buildPanel(snapshot));
   });
 
   pi.on("session_shutdown", stop);

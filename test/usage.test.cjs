@@ -6,12 +6,10 @@ function loadExtension(options = {}) {
   const { entry, env } = loadRuntime({
     ...options,
     expose:
-      "parseCodexUsage, parseClaudeUsage, usageFromHeaders, mergeUsage, fetchJson, usageFailure, readCodexUsage, readClaudeUsage, buildPanel",
+      "parseCodexUsage, parseClaudeUsage, usageFromHeaders, fetchJson, usageFailure, readCodexUsage, readClaudeUsage",
   });
   return { ...entry, env };
 }
-
-const plain = (value) => JSON.parse(JSON.stringify(value));
 
 test("a weekly-only primary window is not also displayed as 5h", () => {
   const extension = loadExtension();
@@ -101,38 +99,30 @@ test("HTTP 429 respects Retry-After and rejects redirects", async () => {
   assert.equal(request.redirect, "error");
 });
 
-test("failed refresh preserves quota and marks cached data in the existing layout", () => {
+test("a missing Codex session is reported without consulting openai auth", async () => {
   const extension = loadExtension();
-  const usage = extension.mergeUsage(
-    { fiveHour: { usedPercent: 31 }, weekly: { usedPercent: 88 } },
-    { error: "HTTP 429" },
-  );
-  assert.equal(usage.fiveHour.usedPercent, 31);
-  assert.equal(usage.weekly.usedPercent, 88);
-  const rows = extension.buildPanel({ codex: usage, claude: usage }).keyValues;
-  assert.equal(rows[0].label, "Codex");
-  assert.equal(rows[0].labelRole, "primary");
-  assert.equal(rows[1].label, "5h");
-  assert.equal(rows[1].progress, 0.31);
-  assert.match(rows[3].value, /dato anterior.*HTTP 429/);
-});
-
-test("OpenAI ChatGPT auth is diagnosed without sending its token to ChatGPT backend", async () => {
-  const extension = loadExtension();
+  const asked = [];
+  const getProviderAuth = async (provider) => {
+    asked.push(provider);
+    return provider === "openai-codex"
+      ? { source: "ApiKey", auth: { apiKey: "synthetic-key" } }
+      : { source: "OAuth", auth: { apiKey: "synthetic-openai-token" } };
+  };
   const result = await extension.readCodexUsage({
-    modelRegistry: {
-      getProviderAuth: async (provider) =>
-        provider === "openai"
-          ? { source: "OAuth", auth: { apiKey: "synthetic-openai-token" } }
-          : undefined,
-    },
+    modelRegistry: { getProviderAuth },
   });
-  assert.match(result.error, /OAuth openai: cuotas no expuestas/);
+  assert.match(result.error, /sin sesión de cuota/);
+  assert.deepEqual(asked, ["openai-codex"]);
+  assert.deepEqual(extension.env.requests, []);
 });
 
 test("Codex account metadata is used when absent from the access token", async () => {
   const extension = loadExtension({
-    credential: { type: "oauth", accountId: "synthetic-account" },
+    credential: {
+      type: "oauth",
+      access: "synthetic-codex-token",
+      accountId: "synthetic-account",
+    },
     fetch: async (_url, options) => {
       assert.equal(options.headers["ChatGPT-Account-Id"], "synthetic-account");
       return Response.json({
@@ -175,20 +165,25 @@ test("Claude uses subscription headers and the read-only usage endpoint", async 
   assert.equal(result.fiveHour.usedPercent, 10);
 });
 
-test("passive partial updates preserve the other window and clear errors", () => {
-  const extension = loadExtension();
-  const result = extension.mergeUsage(
-    {
-      fiveHour: { usedPercent: 10 },
-      weekly: { usedPercent: 88 },
-      error: "HTTP 429",
+test("stored account metadata must belong to the resolved token", async () => {
+  const codexAuth = {
+    modelRegistry: {
+      getProviderAuth: async () => ({
+        source: "OAuth",
+        auth: { apiKey: "synthetic-codex-token" },
+      }),
     },
-    { fiveHour: { usedPercent: 12 } },
-  );
-  assert.deepEqual(plain(result), {
-    fiveHour: { usedPercent: 12 },
-    weekly: { usedPercent: 88 },
+  };
+  const other = loadExtension({
+    credential: {
+      type: "oauth",
+      access: "synthetic-other-token",
+      accountId: "synthetic-other-account",
+    },
   });
+  const result = await other.readCodexUsage(codexAuth);
+  assert.equal(result.error, "token sin ID de cuenta Codex");
+  assert.deepEqual(other.env.requests, []);
 });
 
 test("diagnostics capture one response and never expose header values", async () => {

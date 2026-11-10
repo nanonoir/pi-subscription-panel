@@ -162,8 +162,8 @@ Implementation can improve types after source verification; all percentages must
 ## 6. Configuration
 
 Global config is `subscription-panel.json` under Pi's agent configuration directory
-(resolved with `getAgentDir()`). The standalone preferences module implements
-schema 1; runtime wiring is a subsequent Phase 4 unit.
+(resolved with `getAgentDir()`). The preferences module implements schema 1 and is
+wired into the production controller; actual TUI persistence validation remains pending.
 
 Schema 1 defaults (native `anthropic` remains separate from `claude-code`):
 
