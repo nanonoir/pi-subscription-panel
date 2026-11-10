@@ -24,8 +24,8 @@ Source evidence is in [Atelier feasibility](../../references/atelier-feasibility
       toggling, retained headings/summaries, and no provider I/O through the spike.
 - [x] Typecheck the fixture and document a portable PowerShell launch that loads
       only the existing Atelier host plus this fixture, not the production panel.
-- [ ] Independently review, validate, and deliver the spike in a bounded PR.
-- [ ] Obtain actual TUI observations from the owner. This environment has no
+- [x] Independently review, validate, and deliver the spike in a bounded PR.
+- [x] Obtain actual TUI observations from the owner. This environment has no
       interactive-terminal tool. Static and mocked tests do not satisfy this gate.
 
 ## After the gate (not implemented by the spike)
@@ -49,8 +49,11 @@ applicable checks before authorized merge. No costly E2E infrastructure.
 
 ## Outcome
 
-Pending. The fixture will prove only the selected interaction pathway, not live
-quota accuracy, account compatibility, preference persistence, or completed UI.
+The command/menu interaction gate is satisfied by the owner's screenshot: all
+three TEST panels rendered, with Codex collapsed retaining its heading/summary
+while Claude Code and Antigravity remained expanded. This does not establish live
+quota accuracy, account compatibility, preference persistence, resizing behavior,
+or completion of the production UI. Production implementation remains pending.
 
 ## Spike validation
 
@@ -60,3 +63,46 @@ confirmed no changes under `extensions/` or in package/lock metadata. Independen
 review passed with no material issues and explicitly left the real TUI gate open.
 The fixture and tests total 232 authored lines; TypeScript include configuration
 adds five lines and removes one. Delivery follows; this phase is not complete.
+
+## Owner TUI observation and visibility diagnosis
+
+The spike was merged as PR #5 (`3c6b4ab`). The owner initially reported no panels.
+Read-only investigation found no registration-protocol mismatch; Atelier requires
+Display edits to be saved and may drop entire contributed panels under height
+pressure. A fix-agent corrected those omissions in the manual instructions. The
+owner then supplied the successful three-panel screenshot described above. The
+exact cause of the earlier invisibility was not independently established; do not
+claim a renderer/protocol bug was fixed. Never patch Atelier or force its layout.
+
+## Production delivery units
+
+Deliver each unit from the preceding merged `main`, within the authored-code
+budget, with focused tests and independent review:
+
+1. Global preferences module/schema and atomic local persistence, with synthetic
+   temporary-file tests. Preserve `getAgentDir()`/the reserved config filename,
+   default remaining display/all providers expanded, response-only Claude policy,
+   and default-off Antigravity. Unknown future schemas must not be overwritten.
+2. Pure responsive provider presentation: actual reported windows only, independent
+   pools, labelled used/remaining display, countdowns/observation age, missing/error
+   states, and collapsed header/summary. Preserve host row/text limits.
+3. Runtime wiring and `/subscriptions` menu/direct controls with persistence and
+   response-driven Claude observation. Keep Codex/native Anthropic acquisition
+   intact and distinguish native Anthropic from Claude Code. No inference probe,
+   extra request on expansion, or automatic Antigravity polling before Phase 5.
+
+Use a configurable three-minute observation-age threshold for stale labels (not
+a Claude polling interval or provider guarantee). Phase 5 will harden scheduling
+and coordination. Validate production persistence/layout separately; the spike
+only established the approved interaction pathway.
+
+## Preferences unit progress
+
+Implemented schema-1 normalization and explicit local persistence, with ten
+temporary-file tests. Defaults preserve all providers' expanded details, remaining
+display, response-only Claude, default-off Antigravity, and conservative interval
+minimums. Loading never writes; unknown/malformed schemas are protected from
+ordinary explicit saves. Atomic rename is not a cross-session transaction; a
+concurrent replacement between read-check and rename is not claimed protected.
+Independent review passed with no material issues. Runtime wiring remains out of
+this unit; no real agent-directory file or provider was accessed in tests.

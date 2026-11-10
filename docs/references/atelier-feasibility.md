@@ -27,18 +27,32 @@ unregister or globally hide a panel. This is **not a clickable accordion**.
 
 Atelier starts new contributions hidden. Its Settings → Display remains the
 authority for enabling/hiding/reordering panels, normally a one-time setup for new
-panel IDs. Do not silently rewrite Atelier settings to force visibility. Once
-enabled there, no command is needed to keep viewing quotas across sessions.
+panel IDs. Do not silently rewrite Atelier settings to force visibility. Display
+edits are a draft until **Save default** succeeds; runtime is unchanged before
+that. Once enabled and saved there, no command is needed to keep viewing quotas
+across sessions. The host may still drop an enabled contributed panel entirely
+when vertical height is insufficient (no scrolling; contributed panels rank after
+built-ins and reordering does not raise that rank). Host source: installed
+0.18.0 `src/settings-workspace.ts` 254–262, 287–292, 322–347 and `src/sidebar.ts`
+540–564, 639–668. Source review found no protocol mismatch between 0.16 and
+0.18/Pi; the user-observed missing panels are not yet attributed to a cause.
 Keep the existing `subscription:limits` ID for compatibility and never load the
 original package and this copy simultaneously.
 
-## Live feasibility gate still pending
+## Live interaction gate observed; production validation pending
 
-Before calling the interaction complete, prove the approved command/menu path in
-an actual Pi TUI with the intended host version. Verify independently toggled
-details, persistent preferences, header visibility, no quota request on toggling,
-narrow layouts/resizing, and native Display hide/reorder. Synthetic protocol tests
-cannot substitute for that observation.
+Before calling the production UI complete, additionally verify persisted preferences,
+no quota request on toggling, narrow layouts/resizing, and native Display hide/reorder
+in the intended TUI host. Synthetic protocol tests cannot substitute for actual
+interaction observations.
 
-Do not patch/fork Atelier or claim clickable controls. No TUI session, installation,
-authentication change, or live provider query was performed for this investigation.
+The owner subsequently supplied a screenshot showing all three TEST panels with
+Codex collapsed (heading/summary retained) and the other providers expanded. The
+command/menu pathway is therefore observed in an actual TUI, satisfying the
+interaction spike gate. Persistence, resize behavior, and production provider data
+are not established by that screenshot. No protocol/rendering fix is claimed;
+see the [spike troubleshooting steps](atelier-spike.md#troubleshooting-test-panels-not-visible).
+
+Do not patch/fork Atelier or claim clickable controls. The agent did not start a
+TUI session, install packages, change authentication, or query a live provider for
+this investigation; the actual interaction evidence came from the owner.
