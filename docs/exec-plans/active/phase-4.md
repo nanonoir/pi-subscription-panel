@@ -47,7 +47,7 @@ and unrelated Dependabot work. Do not install packages or generate inference to
 probe quota. Every PR must remain within the delivery size budget and pass
 applicable checks before authorized merge. No costly E2E infrastructure.
 
-## Outcome
+## Outcome — blocked on required OpenAI quota source
 
 The command/menu interaction gate is satisfied by the owner's screenshot: all
 three TEST panels rendered, with Codex collapsed retaining its heading/summary
@@ -170,3 +170,28 @@ re-review. Parent pre-delivery `npm run check` passed all 72 fast tests, formatt
 lint, and types; the baseline entry point and package/lock remain unchanged.
 Runtime wiring is still pending the OpenAI source decision and subsequent
 integration/real-provider validation. This phase must not be archived as complete.
+
+## Canonical OpenAI identity clarification
+
+After PR #10 merged at `5e3ddce`, the owner confirmed `openai/{model}` is canonical
+and `openai-codex` was the incorrect legacy implementation. Do not ask the owner to
+select it or reauthenticate. This resolves provider identity, not endpoint/token
+compatibility. The PRD now requires the current `openai` integration; public-source
+quota investigation continues without live requests or credential access. Runtime
+wiring is on `feature/subscription-runtime` and must not silently send current
+credentials to the legacy quota endpoint or invent a quota percentage.
+
+## Authorized compatibility probe outcome
+
+Following the owner's community report and explicit one-probe authorization, a
+safety-reviewed temporary diagnostic resolved only the installed Pi `openai` OAuth
+and attempted one fixed WHAM GET (ten-second timeout, no redirects/retries). It
+returned HTTP 401; no account header was obtainable via the resolved headers/token
+metadata used, and no valid quota windows were received. No inference, alternate
+credential/provider, CLI installation, or login change was performed. Only sanitized
+status metadata was emitted; the body was cancelled and normal SDK writes settled.
+
+The exact rejection cause is not established. Real Codex percentages/resets remain
+an unmet mandatory requirement, not an approved unavailable fallback. Stop further
+live probing under this permission and retain this plan as blocked/incomplete.
+Evidence and limits are recorded in [provider discovery](../../references/provider-discovery.md).

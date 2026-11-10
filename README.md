@@ -7,7 +7,7 @@ A read-only subscription usage panel for the [Pi](https://pi.dev/) TUI and
 
 | Integration                        | Status                                                                                         |
 | ---------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Codex                              | Uses the existing Pi `openai-codex` OAuth session.                                             |
+| Codex                              | Required; quota access for the existing `/login openai` session is still unresolved.           |
 | Native Anthropic OAuth             | Preserves the upstream `anthropic` quota integration. This is **not Claude Code CLI support**. |
 | Claude Code CLI / `pi-claude-code` | **Planned**, not implemented or verified.                                                      |
 | Antigravity bridge                 | **Planned**, not implemented.                                                                  |
@@ -50,13 +50,16 @@ the commands above install from your local checkout.
 The baseline reads existing OAuth sessions and queries these **undocumented**
 usage interfaces; they are not guaranteed public APIs:
 
-- Codex: `https://chatgpt.com/backend-api/wham/usage`.
+- Copied legacy Codex path: `https://chatgpt.com/backend-api/wham/usage`.
 - Native Anthropic: `https://api.anthropic.com/api/oauth/usage`.
 
 It also consumes recognized quota headers from ordinary provider responses.
 It does not generate inference requests to measure quota or manage authentication.
-API-key credentials are not used for subscription requests. The separate `openai`
-ChatGPT login is not a substitute for `openai-codex`.
+API-key credentials are not used for subscription requests. The owner's canonical
+integration is `/login openai`; do not switch providers or create another login
+for this panel. One explicitly authorized WHAM request using that existing session
+returned HTTP 401. This remains a functional blocker, not completed Codex support;
+see [the source investigation](docs/references/provider-discovery.md).
 
 Requests reject redirects and use a 10-second timeout. Quota state stays in memory;
 credentials and account identifiers are not displayed or persisted in panel state.
