@@ -114,4 +114,34 @@ quota pools and fail closed on unsupported responses.
 The owner has resolved the acquisition/refresh choices above. Typed contracts
 must accommodate independent pools, optional observation provenance,
 partial availability, and unavailable percentages without fabricated zeros.
-Atelier accordion interaction remains a separate Phase 4 gate.
+The owner-observed Atelier interaction proof is recorded separately in
+[Atelier feasibility](atelier-feasibility.md); it does not verify provider quota data.
+
+## Pi 1.5 compatibility and new OpenAI subscription path
+
+The owner's TUI screenshot reports Pi 1.5.0, provider `openai`, and subscription
+billing. Read-only inspection of the installed global Pi/`pi-ai` 1.5.0 packages
+confirmed that `getAgentDir`, `readStoredCredential`, provider auth resolution,
+`message_end` diagnostics, and HTTP response metadata remain available. No account,
+credentials, private session, or runtime model configuration was inspected.
+
+Pi 1.5's public `pi-ai/dist/providers/openai.js` explicitly supports OpenAI ChatGPT
+subscription OAuth through `https://api.openai.com/v1`, with token sharing described
+in `auth/oauth/openai-chatgpt.js`. Its `openai-codex` provider is a distinct legacy
+ChatGPT backend integration. Thus `openai` can legitimately use a subscription;
+that does **not** prove its token is authorized for legacy `wham/usage` quota calls.
+
+The existing panel's exact-provider credential and endpoint boundary remains
+unchanged. Auth resolution can refresh credentials through Pi's existing machinery;
+do not describe it as a guarantee of no SDK-managed credential writes.
+
+HTTP `after_provider_response` has status/headers but no provider/model identity;
+it does not establish WebSocket header coverage. No verified new-OpenAI subscription
+quota schema or machine-readable usage endpoint was found. Per-turn tokens and
+billing labels are not subscription percentages. Do not substitute credentials,
+infer percentages, or generate inference solely to inspect quota.
+
+**Owner decision pending:** retain the existing legacy quota path with an honest
+unavailable state where the current login exposes no compatible quota, or investigate
+another read-only source for the new `openai` path before adopting that fallback.
+No auth/client/provider/model change or new quota probe has been performed.

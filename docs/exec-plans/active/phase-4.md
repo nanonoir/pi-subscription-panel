@@ -135,3 +135,20 @@ Delivery is split into pure `quota-format.ts` helpers/tests (142 authored lines)
 then panel assembly/tests (approximately 580 authored lines), each under 600.
 The parent ran all 16 focused format/presentation tests successfully, plus typecheck
 and formatting. Production integration and actual resize/persistence remain pending.
+
+## Controller foundation corrections
+
+The first controller review identified lost response-driven observations while
+preferences load asynchronously, and a cancelled start initiating a read after a
+pending save. Buffer observations per startup generation, discard cancelled work,
+and check generation before any post-save load. Add deferred load/save regressions.
+Preserve serialized explicit saves and truthful session-only failure notices.
+
+This unit also exceeded 600 authored lines. Separate preference command/save actions
+from panel lifecycle/observation management into coherent, separately tested delivery
+units rather than dropping necessary coverage or compressing code to fit.
+
+Pure formatting helpers were merged as PR #7 at `637dfe1` after passing CI.
+The subsequent panel-assembly unit contains 580 authored source/test lines and
+has a passing independent final review with all 16 combined format/render tests
+passing. It does not activate the presentation or acquire provider data yet.
