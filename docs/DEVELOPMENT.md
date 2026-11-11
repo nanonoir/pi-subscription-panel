@@ -54,7 +54,7 @@ fake-file profiles; they do not establish actual TUI behavior.
 | `docs/PRD.md`                                                       | Canonical requirements and phase acceptance gates.                                                             |
 
 Preserve existing panel identifiers and `/subscription-debug` for compatibility.
-The package dependency remains `pi-atelier@^0.16.0`;
+The package dependency remains `pi-atelier@^0.18.0`;
 Pi agent/TUI peer ranges remain inherited `*`. Types are checked against the lockfile's
 resolved peers, not every Pi version. The ambient Atelier declaration can mask API
 drift; automated tests mock registration and do not prove live TUI compatibility.

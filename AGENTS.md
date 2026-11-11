@@ -4,8 +4,8 @@ Read-only subscription usage panel for Pi and Pi Atelier. Models keep the canoni
 
 ## Stack and structure
 
-- Node.js 22+ and npm; TypeScript 5.9, strict NodeNext modules. Pi loads the extension directly, without a build step.
-- Pi Atelier `^0.16.0` supplies the sidebar contribution API; Pi coding-agent and TUI are peer dependencies. The local Atelier declaration is a type-checking shim, not runtime code.
+- Node.js 22+ and npm; TypeScript 6.0 (`~6.0.3`; typescript-eslint 8.x supports `<6.1.0`, so 7.x is blocked), strict NodeNext modules. Pi loads the extension directly, without a build step.
+- Pi Atelier `^0.18.0` supplies the sidebar contribution API; Pi coding-agent and TUI are peer dependencies. The local Atelier declaration is a type-checking shim, not runtime code.
 - `extensions/index.ts` contains the runtime; `test/usage.test.cjs` uses Node's test runner and mocks. ESLint, Prettier, and TypeScript provide quality checks. Manifests and configuration are authoritative for dependency versions.
 - See [ARCHITECTURE.md](ARCHITECTURE.md) for runtime boundaries and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for detailed commands, smoke checks, and limitations.
 
