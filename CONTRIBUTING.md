@@ -24,5 +24,5 @@ new repository. CI checks formatting, lint, types, tests, and PR-title conventio
 
 Commits, push, pull requests, merges, and publication require the owner's applicable
 authorization. Phase 1 ends with a reviewable first-commit candidate, not a commit.
-Release and publish workflows are intentionally absent until a separately authorized
-release phase resolves the [distribution blockers](docs/PROVENANCE.md).
+Release and publish workflows are intentionally absent until npm publication is
+explicitly requested; see the [distribution status](docs/PROVENANCE.md).

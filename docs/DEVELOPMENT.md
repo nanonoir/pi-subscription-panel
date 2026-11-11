@@ -144,7 +144,8 @@ See [the canonical refresh policy](PRD.md#5-refresh-policy) for provider-specifi
   Entries are bounded (16 entries, 32 windows, 60 minutes), never persisted and never
   shared across processes. Native Anthropic is not retained. Mocked
   loader tests (`test/quota-memory.test.cjs`) reload the module graph in a shared
-  realm; real Pi `/reload` behavior and the production TUI remain unverified.
+  realm; these tests do not verify real Pi `/reload` behavior. The owner confirmed
+  production functionality and release readiness without a separate reload result.
 - `/subscriptions refresh collapsed off` pauses acquisition for collapsed providers;
   `on` (the default) keeps it enabled. This policy is independent of expansion and
   preserves backoff. Preference changes do not directly issue reads.

@@ -23,10 +23,9 @@ safe control rather than claiming integration that cannot work.
       separately from Atelier Display visibility.
 - [x] Run focused tests and independent reviews; reconcile documentation for the
       implemented presentation and freshness policy.
-- [ ] Identify the old single-panel loaded copy and validate the production TUI
-      manually with the owner.
-- [ ] Complete the plan only after the remaining checks. No commit, push, PR or
-      merge is authorized.
+- [x] Owner confirmed production functionality and release readiness; no repeat
+      acceptance gate is required. The old loaded copy was not identified.
+- [x] Close implementation work; Git release delivery continues separately.
 
 ## Owner-approved Claude Code startup quota
 
@@ -278,7 +277,8 @@ verified identity.
       re-enabling during an in-flight read. The subsequent deterministic test
       closes that gap; seven Antigravity memory tests passed. No implementation
       bug was identified.
-- [ ] Production TUI check with real `/reload` pending (owner).
+- [x] Owner confirmed production functionality and release readiness; no separate
+      real `/reload` test result was supplied.
 
 ## Owner-authorized 1.0.0 local release preparation
 
@@ -295,15 +295,15 @@ author-requested attribution is thanks plus the upstream link at the end of the 
       copyrights are preserved as known and none are invented), README final
       acknowledgement, provenance, and changelog 1.0.0 entry.
 - [x] Reconcile the old "unverified permission / private-only" statements.
-- [ ] No commit, push, PR, merge, tag or npm publish is performed by this step.
+- [x] Local preparation completed; subsequent Git delivery was separately authorized.
 
-## Current implementation and remaining gates
+## Implementation state before owner acceptance
 
-The local `feature/panel-visual-correction` implementation provides remaining-only bars and percentages, compact window
+The implementation provides remaining-only bars and percentages, compact window
 countdowns without a redundant reset label, and a Claude waiting state. The
 `/subscriptions` menu offers Antigravity refresh opt-in; Atelier Display remains
-the separate visibility control. The loaded-copy discrepancy is not yet verified
-in the owner's production TUI.
+the separate visibility control. At this point the loaded-copy discrepancy had not
+been identified in the owner's production TUI.
 
 Claude Code's startup and scheduled reader uses only its local credential file,
 with a five-minute minimum gap, no credential fallback, token refresh or inference.
@@ -317,9 +317,9 @@ above. An earlier implementer run of `npm run check`
 passed 202 tests, but exceeded the feature-branch policy against full suites; it
 was not repeated during closure.
 The one authorized live probe above is source evidence, not TUI acceptance or
-authorization for further live calls. Production TUI validation and identification
-of the old single-panel loaded copy remain pending. No commit, push, PR or merge
-is authorized.
+authorization for further live calls. At that point production acceptance and
+identification of the old single-panel loaded copy remained pending; the later owner
+acceptance and Git authorization are recorded below.
 
 # Authorized 1.0.0 Git delivery
 
@@ -332,3 +332,37 @@ preserved. Git push, PR creation, merges, v1.0.0 tag and GitHub Release are auth
 Do not publish npm; keep private:true pending the owner's installation validation.
 The owner confirmed production functionality and release readiness; do not require
 another manual acceptance gate. Record actual CI and delivery results at closure.
+
+## Implementation Outcome
+
+### Implemented
+
+The panel presentation, provider refresh controls and diagnostics, and bounded
+reload retention were implemented and documented as described above. Release
+metadata, MIT licensing and attribution were prepared locally; npm remains private.
+
+### Deviations from Design
+
+Reload retention superseded the original no-quota-cache restriction: it uses bounded
+process-local memory with credential-bound Codex and Claude Code entries and the
+owner-approved single-account-per-process assumption for Antigravity. Native
+Anthropic retention is excluded. Atelier Display controls visibility separately
+from Antigravity refresh opt-in. The old loaded copy was not identified; the owner
+accepted the functioning result without another acceptance gate.
+
+### Validation
+
+Independent reviews passed, including the visual, diagnostics and retention scopes;
+focused tests and checks are recorded above. The owner confirmed production
+functionality and release readiness, without providing a separate real `/reload`
+or real post-reload 4xx/5xx test result. PR [#16](https://github.com/nanonoir/pi-subscription-panel/pull/16)
+merged to main with CI 169 passing; PR [#17](https://github.com/nanonoir/pi-subscription-panel/pull/17)
+merged with CI 254 passing. The owner approved the PR 2 size exception
+(+4668/-253 authored lines at approval).
+
+### Follow-up
+
+Git release preparation is in progress: PR 3, the `v1.0.0` tag and GitHub Release
+are not yet complete; final delivery URLs are pending. npm publication is excluded
+until separately authorized. The previously observed Native Anthropic error cause
+remains unknown; no fix is claimed.

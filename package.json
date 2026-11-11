@@ -1,8 +1,17 @@
 {
   "name": "pi-subscription-panel",
+  "version": "1.0.0",
   "private": true,
-  "version": "0.1.0",
-  "description": "Read-only Pi Atelier subscription panel for Codex and native Anthropic OAuth usage",
+  "description": "Read-only Pi Atelier subscription usage panel for Codex, Claude Code, Antigravity and native Anthropic OAuth",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nanonoir/pi-subscription-panel.git"
+  },
+  "homepage": "https://github.com/nanonoir/pi-subscription-panel#readme",
+  "bugs": {
+    "url": "https://github.com/nanonoir/pi-subscription-panel/issues"
+  },
   "type": "module",
   "keywords": [
     "pi-package",
@@ -37,5 +46,8 @@
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@earendil-works/pi-tui": "*"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

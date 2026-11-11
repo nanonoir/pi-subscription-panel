@@ -7,31 +7,34 @@ upstream commit has not been independently verified; version metadata is not a c
 
 ## Permission record
 
-The project owner's supplied [PRD](PRD.md) reports explicit permission from the original
-author to copy, modify, and republish with attribution. This is the current record
-of that report, **not the underlying permission evidence**.
-
-Before redistribution, obtain and retain a dated author statement or durable link
-confirming the scope, including npm redistribution and any right to apply a license.
-No license file or package license declaration was supplied with this copy. Do not
-infer MIT, public-domain status, or unrestricted rights from that absence.
+The project owner confirmed that the original author gave permission, held
+privately by the owner, to use the upstream work under the MIT License. The
+permission evidence is not published in this repository. The upstream copy supplied
+no license file; the MIT text in [LICENSE](../LICENSE) was written for this project
+and is not text supplied by the original author. The owner authorized public release:
+Git now, npm later. The original author asked only for thanks and a link to the
+upstream repository, which close the README.
 
 ## Preserved attribution
 
-- README names and links Alexmarco and the original repository.
+- README ends with an acknowledgement naming and linking Alexmarco and the original
+  repository.
+- `LICENSE` credits nanonoir for this project's contributions and preserves any
+  copyright of the upstream author in derived portions; no other copyright holders
+  are asserted.
 - `docs/UPSTREAM_CHANGELOG.md` retains the original release entries and links;
   the root `CHANGELOG.md` tracks only this project's changes.
 - Existing extension source and tests are retained without behavioral changes in Phase 1.
 
-## Pending distribution decisions
+## Distribution status
 
-- Owner approval and availability of the final npm name (local working name:
-  `pi-subscription-panel`). `private: true` currently blocks npm publication.
-- The independent repository is now
-  [nanonoir/pi-subscription-panel](https://github.com/nanonoir/pi-subscription-panel).
-  Package repository/homepage/issue URLs still need reconciliation before release;
-  inherited project-ownership URLs were removed during foundation work.
-- Permission evidence, npm distribution scope, and applicable license.
-- Authorized release automation and release preparation in Phase 5. This project's
-  initial development version is 0.1.0, separate from upstream's 1.0.2 baseline;
-  no independent release has been published.
+- The independent repository is
+  [nanonoir/pi-subscription-panel](https://github.com/nanonoir/pi-subscription-panel);
+  package repository, homepage, and issue URLs point to it.
+- Version 1.0.0 is prepared locally under MIT. Git publication is authorized; the
+  commit, push, and tag still require the owner's execution step.
+- npm publication is authorized for later but not yet performed: `private: true`
+  stays until the owner explicitly requests it, and the final npm name availability
+  must be checked then. Dependency audit findings in `docs/DEVELOPMENT.md` remain
+  open items for that step.
+- This project's version line (1.0.0) is independent from upstream's 1.0.2 baseline.
