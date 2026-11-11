@@ -41,15 +41,15 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test"
   },
   "dependencies": {
-    "pi-atelier": "^0.16.0"
+    "pi-atelier": "^0.18.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "eslint": "^10.13.0",
-    "globals": "^17.13.0",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "prettier": "^3.6.2",
-    "typescript": "^5.9.3",
-    "typescript-eslint": "^8.46.0"
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.72.2"
   },
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*",

@@ -6,9 +6,8 @@
     "strict": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
-    "baseUrl": ".",
     "paths": {
-      "pi-atelier/extensions/index.ts": ["types/pi-atelier.d.ts"]
+      "pi-atelier/extensions/index.ts": ["./types/pi-atelier.d.ts"]
     },
     "noEmit": true
   },
