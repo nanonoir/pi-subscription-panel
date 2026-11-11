@@ -1,6 +1,5 @@
 import {
   AVAILABILITY,
-  PROVIDER,
   SOURCE,
   type ProviderId,
   type QuotaPool,
@@ -26,11 +25,8 @@ export const POLL_FAILURE = {
 
 export type PollFailureKind = (typeof POLL_FAILURE)[keyof typeof POLL_FAILURE];
 
-/** Claude Code is response-driven and never polled. */
-export type PollingProviderId = Exclude<
-  ProviderId,
-  typeof PROVIDER.CLAUDE_CODE
->;
+/** Claude Code is polled only through its owner-approved local session. */
+export type PollingProviderId = ProviderId;
 
 /** Facts the transport knows without parsing human text. */
 export interface PollMetadata {
@@ -40,13 +36,37 @@ export interface PollMetadata {
   cancelled?: boolean;
   /** Absolute epoch milliseconds of a known server deadline. */
   retryAtMs?: number;
+  /**
+   * Opaque keyed digest of the credential identity the successful request was
+   * actually made with. Internal to in-memory retention; never displayed.
+   */
+  authContext?: string;
 }
 
 export interface PollSuccess {
   kind: typeof POLL_OUTCOME.SUCCESS;
   providerId: PollingProviderId;
   result: QuotaResult;
+  /** Opaque digest (see `PollMetadata`); absent when identity is unprovable. */
+  authContext?: string;
 }
+
+const AUTH_CONTEXT = /^[0-9a-f]{64}$/;
+
+/** Allowlisted failure reasons: the only failure detail the registry retains. */
+export const FAILURE_REASON = {
+  HTTP: "http",
+  TIMEOUT: "timeout",
+  NETWORK: "network",
+  QUERY: "query",
+  FORMAT: "format",
+  SESSION: "session-unavailable",
+  MANUAL: "manual-retry",
+  UNKNOWN: "unknown",
+} as const;
+
+export type FailureReason =
+  (typeof FAILURE_REASON)[keyof typeof FAILURE_REASON];
 
 /** Carries no windows: a failure can never refresh observation timestamps. */
 export interface PollFailure {
@@ -54,6 +74,8 @@ export interface PollFailure {
   providerId: PollingProviderId;
   failure: PollFailureKind;
   detail: string;
+  /** Allowlisted reason; absent or unrecognized values mean unknown. */
+  reason?: FailureReason;
   status?: number;
   retryAtMs?: number;
 }
@@ -149,6 +171,75 @@ function validStatus(value: unknown): number | undefined {
     : undefined;
 }
 
+const REASONS: readonly string[] = Object.values(FAILURE_REASON);
+
+/** Exact fixed strings the readers emit; anything else is never interpreted. */
+const KNOWN_DETAIL = new Map<string, FailureReason>([
+  ["timeout", FAILURE_REASON.TIMEOUT],
+  ["error de red", FAILURE_REASON.NETWORK],
+  ["error de consulta", FAILURE_REASON.QUERY],
+  ["ventanas ausentes o formato cambiado", FAILURE_REASON.FORMAT],
+  ["respuesta inesperada", FAILURE_REASON.FORMAT],
+  ["sin sesión de Claude Code", FAILURE_REASON.SESSION],
+]);
+
+/** Retained failure facts: allowlisted code and validated status only. */
+export interface FailureInfo {
+  reason: FailureReason;
+  status?: number;
+}
+
+/** Rebuilds failure facts from an outcome; unrecognized values become unknown. */
+export function sanitizeFailure(outcome: {
+  reason?: unknown;
+  status?: unknown;
+}): FailureInfo {
+  const reason =
+    typeof outcome.reason === "string" && REASONS.includes(outcome.reason)
+      ? (outcome.reason as FailureReason)
+      : FAILURE_REASON.UNKNOWN;
+  const status = validStatus(outcome.status);
+  return {
+    reason,
+    ...(reason === FAILURE_REASON.HTTP && status !== undefined
+      ? { status }
+      : {}),
+  };
+}
+
+const REASON_TEXT: Record<FailureReason, string> = {
+  [FAILURE_REASON.HTTP]: "HTTP error",
+  [FAILURE_REASON.TIMEOUT]: "request timed out",
+  [FAILURE_REASON.NETWORK]: "network error",
+  [FAILURE_REASON.QUERY]: "query error",
+  [FAILURE_REASON.FORMAT]: "unexpected response format",
+  [FAILURE_REASON.SESSION]: "session unavailable",
+  [FAILURE_REASON.MANUAL]: "indeterminate failure, manual retry required",
+  [FAILURE_REASON.UNKNOWN]: "reason unknown",
+};
+
+/** Fixed human text for retained failure facts. */
+export function describeFailure(info: FailureInfo): string {
+  return info.reason === FAILURE_REASON.HTTP && info.status !== undefined
+    ? `HTTP ${info.status}`
+    : REASON_TEXT[info.reason];
+}
+
+function failureReason(
+  meta: PollMetadata,
+  status: number | undefined,
+  failure: PollFailureKind,
+  detail: string | undefined,
+): FailureReason {
+  if (status !== undefined && status >= 400) return FAILURE_REASON.HTTP;
+  if (meta.authUnavailable === true) return FAILURE_REASON.SESSION;
+  const known = detail === undefined ? undefined : KNOWN_DETAIL.get(detail);
+  if (known !== undefined) return known;
+  return failure === POLL_FAILURE.MANUAL
+    ? FAILURE_REASON.MANUAL
+    : FAILURE_REASON.UNKNOWN;
+}
+
 function safeDetail(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
@@ -188,6 +279,10 @@ export function toPollOutcome(
       kind: POLL_OUTCOME.SUCCESS,
       providerId,
       result: { providerId, availability: AVAILABILITY.READY, pools },
+      ...(typeof meta.authContext === "string" &&
+      AUTH_CONTEXT.test(meta.authContext)
+        ? { authContext: meta.authContext }
+        : {}),
     };
   }
 
@@ -200,11 +295,13 @@ export function toPollOutcome(
     failure = POLL_FAILURE.MANUAL;
   }
 
+  const reported = matches ? safeDetail(result.detail) : undefined;
   return {
     kind: POLL_OUTCOME.FAILURE,
     providerId,
     failure,
-    detail: (matches && safeDetail(result.detail)) || GENERIC_DETAIL[failure],
+    detail: reported || GENERIC_DETAIL[failure],
+    reason: failureReason(meta, status, failure, reported),
     ...(status === undefined ? {} : { status }),
     ...retryDeadline(meta, matches ? result : undefined),
   };

@@ -566,25 +566,34 @@ test("global registry is shared across module instances", () => {
   assert.equal(again.getProcessRegistry(host), getProcessRegistry(host));
 });
 
-test("Claude Code cannot be scheduled for polling", () => {
-  assert.throws(
-    () =>
-      createRefreshScheduler({
-        scope: "x",
-        jobs: [
-          {
-            providerId: contracts.PROVIDER.CLAUDE_CODE,
-            enabled: () => true,
-            run: () => Promise.resolve({}),
-          },
-        ],
-        now: () => 0,
-        random: () => 0,
-        deliver: () => {},
-        host: {},
-      }),
-    /response-driven/,
+test("Claude Code can be scheduled with a five-minute minimum gap", () => {
+  let now = 1_000_000;
+  let runs = 0;
+  const scheduler = createRefreshScheduler({
+    scope: "x",
+    jobs: [
+      {
+        providerId: contracts.PROVIDER.CLAUDE_CODE,
+        enabled: () => true,
+        run: () => {
+          runs += 1;
+          return new Promise(() => {});
+        },
+      },
+    ],
+    now: () => now,
+    random: () => 0,
+    deliver: () => {},
+    host: {},
+  });
+  assert.deepEqual(Array.from(scheduler.tick()), ["claude-code"]);
+  assert.equal(
+    scheduler.schedule("claude-code").nextEligibleMs,
+    now + 5 * 60_000,
   );
+  now += 4 * 60_000;
+  assert.deepEqual(Array.from(scheduler.tick()), []);
+  assert.equal(runs, 1);
 });
 
 test("activity for an unregistered provider is ignored", () => {
