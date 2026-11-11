@@ -175,6 +175,6 @@ current dependency tree or UI:
 - npm also warned about deprecated `node-domexception` and unapproved lifecycle
   scripts in `@google/genai` and `protobufjs`; no extra script approval was granted.
 
-See [PROVENANCE.md](PROVENANCE.md) for distribution status. No npm publish or release
-workflow is enabled; the package stays `private` until npm publication is explicitly
-requested.
+See [PROVENANCE.md](PROVENANCE.md) for distribution status. npm publication is authorized
+and the package is prepared, but not yet published: `npm whoami` returned 401, so the
+real publish is pending npm authentication. No release workflow is enabled.

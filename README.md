@@ -1,151 +1,134 @@
 # Pi Subscription Panel
 
-A read-only subscription usage panel for the [Pi](https://pi.dev/) TUI and
-[Pi Atelier](https://github.com/michaelmjhhhh/pi-atelier).
+**Your subscription limits, at a glance. Without leaving Pi.**
 
-## Support
+Read-only quota panels for [Pi](https://pi.dev/) and
+[Pi Atelier](https://github.com/michaelmjhhhh/pi-atelier): Codex, Claude Code,
+Antigravity, and native Anthropic OAuth.
 
-| Integration                    | Current behavior                                                                                                                   |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
-| Codex                          | Reads real quota through the existing Pi **OpenAI Codex** OAuth session. Model execution keeps `openai/{model}` and its own login. |
-| Claude Code / `pi-claude-code` | Reads quota at startup and on eligible refreshes using Claude Code's own credential; also accepts ordinary response metadata.      |
-| Antigravity bridge             | Existing CLI quota source; automatic refresh is implemented but disabled by default.                                               |
-| Native Anthropic OAuth         | Separate optional compatibility panel; not the authentication source for Claude Code.                                              |
+[![Version](https://img.shields.io/badge/version-1.0.0-blue)](https://github.com/nanonoir/pi-subscription-panel/releases/tag/v1.0.0)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)](https://github.com/nanonoir/pi-subscription-panel/blob/main/LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933)](https://nodejs.org/)
 
-Panels always show **remaining** percentages, with reset countdowns. Both windows
-(5h, then weekly) stay visible when collapsed. Missing windows are explained
-without fabricated bars. Fresh readings show no age; stale or failed readings get
-one compact provider-level warning, and a window is marked individually only when
-freshness differs between windows. Partial updates keep the other window's actual
-observation time. Refresh
-uses conservative minimum gaps and failure handling; actual production TUI acceptance
-remains pending.
+![Pi Subscription Panel showing subscription quotas in the Pi Atelier sidebar](https://raw.githubusercontent.com/nanonoir/pi-subscription-panel/main/docs/images/pi-subscription-panel-showcase.gif)
 
-## Install and run locally
+## What you get
 
-Use Node.js **22+**, npm, and your existing Pi + Pi Atelier installation.
-Do not change model routing or install another CLI for this panel. Codex quota
-reads use the additional official Pi OpenAI Codex session supplied by the owner,
-not the direct-sharing token used by `/login openai`.
+- **Remaining quota**, not usage math: progress bars, `% left`, and reset countdowns.
+- **Independent panels** with five-hour and weekly windows when the provider reports them.
+- **Automatic reads**, conservative refresh intervals, and clear failure diagnostics.
+- **Reload continuity** for Codex, Claude Code, and Antigravity: last readings stay
+  visible without bypassing refresh limits.
+- **No inference requests** to measure quota. Your model routing stays unchanged.
 
-Load only **one** panel copy. Before enabling this checkout, use `pi config` to
-disable the original `pi-subscription-limits` extension resources if present.
-Keep your provider extensions, authentication, and Atelier enabled. Both panel
-copies share the preserved `subscription:limits` ID and must not run together.
+## Install
 
-From the cloned repository directory, in a shell or Windows PowerShell:
+Requires **Node.js 22+**, Pi, and Pi Atelier.
+
+```sh
+pi install https://github.com/nanonoir/pi-subscription-panel
+```
+
+Restart Pi, then open **Atelier Settings → Display**, enable the panels you want,
+and choose **Save default**. New panels may start hidden. If the sidebar is short
+on space, enlarge the terminal or hide other panels.
+
+> **Use one copy.** Disable the old `pi-subscription-limits` resources in
+> `pi config`, if installed. Do not also load this extension with `-e` after
+> installing it. Keep Atelier and your provider extensions enabled.
+
+**npm publication is coming next.** This Git release is installable now; no npm
+package installation is advertised until publication is complete.
+
+## Connect your existing subscriptions
+
+| Provider             | Quota source                               | Setup                                                                                                     |
+| -------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| **Codex**            | Pi's `openai-codex` OAuth session          | Sign in to that provider in Pi. This does not change your execution provider or model.                    |
+| **Claude Code**      | Claude Code's existing local OAuth session | Sign in through Claude Code. The panel reads at startup and accepts quota metadata from normal responses. |
+| **Antigravity**      | Existing `agy /usage` CLI bridge           | Have the bridge available, then enable refresh in `/subscriptions`. It is **off by default**.             |
+| **Native Anthropic** | Pi's native Anthropic OAuth session        | Optional, separate from Claude Code. Hide this panel if you do not use that session.                      |
+
+Panel visibility and acquisition are separate: **Atelier Display** shows or hides
+a panel; `/subscriptions` controls details and Antigravity refresh.
+
+## Controls
+
+Open `/subscriptions` for the menu. Enabled panels otherwise work without commands.
+
+| Command                                  | Action                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------- |
+| `/subscriptions toggle codex`            | Expand or collapse Codex details                                        |
+| `/subscriptions toggle claude-code`      | Expand or collapse Claude Code details                                  |
+| `/subscriptions toggle antigravity`      | Expand or collapse Antigravity details                                  |
+| `/subscriptions refresh antigravity on`  | Enable automatic Antigravity reads                                      |
+| `/subscriptions refresh antigravity off` | Disable reads and discard retained Antigravity quota                    |
+| `/subscriptions status`                  | Show sanitized scheduling and failure diagnostics; **makes no request** |
+| `/subscriptions retry claude-code`       | Request a retry, subject to existing safety limits                      |
+
+Retry also accepts `codex`, `antigravity`, and `anthropic`. To pause acquisition
+for collapsed panels, use `/subscriptions refresh collapsed off`; use `on` to
+restore the default behavior. Preferences are saved in Pi's agent directory.
+
+## Refresh and reload
+
+| Provider         | Minimum interval between attempts                    |
+| ---------------- | ---------------------------------------------------- |
+| Codex            | 1 minute                                             |
+| Claude Code      | 5 minutes                                            |
+| Antigravity      | 3 minutes when recently active; 20 minutes when idle |
+| Native Anthropic | 30 minutes                                           |
+
+These are **minimum gaps, not guaranteed update intervals**. Server deadlines,
+failure backoff, and the local one-minute tick can delay a read. Authentication
+failures pause automatic reads until an explicit retry.
+
+`/reload` restores retained readings with their **original observation times**.
+It does not force another request. Retention is bounded, process-local, and never
+written to disk. Closing Pi discards it. Native Anthropic does not retain quota
+across reloads.
+
+> **Antigravity assumes one account per Pi process.** Close and reopen Pi after
+> switching Antigravity accounts; reload alone cannot detect that change.
+
+Missing data is never estimated. Old readings are marked as stale, and independent
+quota pools remain separate. A reset countdown describes the provider's window,
+not the time of the next refresh.
+
+## Privacy and compatibility
+
+- No messages are sent to a model solely to obtain quota.
+- Credentials and account identifiers are not shown in the panels or diagnostics,
+  or stored in panel preferences. Existing provider authentication stays intact.
+- Claude Code uses only its own `~/.claude/.credentials.json`: no alternate
+  credential fallback, token renewal, or extra CLI invocation for that reader.
+- Quota endpoints are undocumented interfaces and can change. Unsupported or
+  partial responses are reported honestly rather than replaced with fake values.
+
+For a waiting or failed panel, start with `/subscriptions status`. It distinguishes
+normal refresh gaps, failure backoff, server deadlines, and manual-retry blocks
+without making another quota request.
+
+## Development
+
+Pi loads the TypeScript extension directly; there is no build step.
 
 ```sh
 npm ci
 npm run check
-pi install .
-pi
+pi -e ./extensions/index.ts
 ```
 
-Open Atelier **Settings → Display**, enable **Codex**, **Claude Code**, and
-**Antigravity**, then choose **Save default**. The **Native Anthropic** panel is
-optional. New contributions start hidden; unsaved Display drafts do not apply.
-Atelier can hide whole panels if terminal height is insufficient: enlarge the
-terminal or hide unneeded built-in panels. Native hide/reorder controls remain intact.
+Use the temporary `-e` command **instead of** loading an installed copy.
+See the [development guide](https://github.com/nanonoir/pi-subscription-panel/blob/main/docs/DEVELOPMENT.md)
+and [contributing guide](https://github.com/nanonoir/pi-subscription-panel/blob/main/CONTRIBUTING.md).
 
-If you ran the earlier spike, exit that session and hide its **TEST** panels.
-They contain fictional data and are not the production panels.
+## License
 
-This is version `1.0.0` under the [MIT License](LICENSE). The package is still
-marked private and no npm installation source is claimed yet. Source is available at
-[nanonoir/pi-subscription-panel](https://github.com/nanonoir/pi-subscription-panel).
+[MIT](https://github.com/nanonoir/pi-subscription-panel/blob/main/LICENSE).
 
-## Panel controls
-
-Viewing enabled panels requires no command. `/subscriptions` opens optional
-controls for independent detail expansion. Panels always show remaining quota;
-`/subscriptions display remaining|used` is a legacy no-op that only says so, and
-any saved `displayMode` is kept untouched:
-
-```text
-/subscriptions toggle codex
-/subscriptions toggle claude-code
-/subscriptions toggle antigravity
-/subscriptions refresh antigravity on
-/subscriptions refresh antigravity off
-/subscriptions refresh collapsed on
-/subscriptions refresh collapsed off
-/subscriptions retry codex
-/subscriptions retry claude-code
-/subscriptions retry antigravity
-/subscriptions retry anthropic
-/subscriptions status
-```
-
-`/subscriptions status` is read-only: it prints each provider's retained scheduling
-metadata (last failure reason and HTTP status, last success, the gap, backoff and
-server deadlines, and the effective cause of the next eligible read). It makes no
-request, reads no credential and stores nothing; reasons come from a fixed allowlist
-(`http`, `timeout`, `network`, `query`, `format`, `session-unavailable`,
-`manual-retry`, `unknown`), never raw errors, bodies, tokens, paths or accounts.
-After a reload the empty panel shows the same real reason and next eligible time
-instead of assuming the minimum gap. `/subscription-debug` is unchanged.
-
-Collapsing retains the heading and summary; it does not hide/unregister a panel,
-delete quota data, or request quota. Preferences persist globally in
-`getAgentDir()/subscription-panel.json`, normally `~/.pi/agent/subscription-panel.json`.
-The file is written only after an explicit preference change. Protected/failed
-saves are reported as session-only. These are command/menu controls, **not clickable headings**.
-
-Antigravity refresh is opt-in through the `/subscriptions` menu or command; Atelier
-Display controls visibility, not acquisition. Refresh while collapsed is on by default and is a
-separate preference; turning it off pauses polling for collapsed providers without
-clearing backoff. Changing these settings or expanding a panel does not itself start
-a read. Manual retry may start one, or report that it is deferred, in progress, or
-disabled; it respects minimum gaps and server deadlines. Authentication failures
-and indeterminate Antigravity failures pause automatic retries until manual retry.
-After an account change, use reload and explicit retry as appropriate; automatic
-account-change detection is not guaranteed.
-
-## Data sources and limitations
-
-- Codex: `https://chatgpt.com/backend-api/wham/usage`, using only Pi Codex OAuth
-  and matching account metadata. A single owner-authorized read returned both
-  five-hour and weekly percentages/resets; the direct-sharing `openai` probe returned 401.
-- Claude Code: a read-only OAuth usage request using only the access token in
-  Claude Code's `~/.claude/.credentials.json`, plus ordinary response
-  `claude-code.rate-limit` diagnostics. One owner-authorized live read returned HTTP
-  200 with both windows; no live values were retained. Diagnostic window fields are
-  internal and optional; missing data is never estimated. This source uses no
-  credential fallback, token refresh, extra CLI invocation, or inference.
-- Native Anthropic: preserved `https://api.anthropic.com/api/oauth/usage` path.
-- Antigravity: existing CLI `/usage` source; scheduled only after explicit opt-in.
-
-Usage endpoints are undocumented interfaces, not guaranteed public APIs. Codex
-has a 60-second minimum gap; Claude Code has a five-minute minimum gap; native Anthropic has a 30-minute gap. Antigravity
-has minimum gaps of three minutes when recently active and 20 minutes when idle.
-HTTP requests reject redirects and time out after ten seconds; 429 and recoverable
-failures back off and honor `Retry-After`. Local ages/countdowns update each minute,
-without making a request just to repaint. The stale label is an observation-age
-threshold, not a polling interval or a guaranteed provider freshness value: it is
-the larger of `staleAfterSeconds` (180 s) and the provider's refresh gap plus 60 s,
-so with defaults Codex is 3 min, Claude Code 6 min, Antigravity 21 min and native
-Anthropic 31 min. It changes no request or gap.
-
-Coordination is process-realm local, not cross-process; actual Pi `/reload` sharing
-has not been proven. Synthetic tests do not establish production TUI behavior.
-Stopping or disabling supported work requests cancellation; exclusion remains until
-settlement, including the owned Antigravity child, not shared engines or descendants.
-
-No inference is generated to measure quota. Credentials/account IDs are not
-displayed, persisted in panel preferences, or included in errors. Pi may renew
-existing OAuth through its normal machinery. See [provider discovery](docs/references/provider-discovery.md)
-for evidence and [the development guide](docs/DEVELOPMENT.md) for remaining checks.
-
-## Development and origins
-
-See [DEVELOPMENT.md](docs/DEVELOPMENT.md) for commands, smoke checks, and limitations;
-[CONTRIBUTING.md](CONTRIBUTING.md) describes change scope and delivery.
-
-### Acknowledgements / Origins
+## Acknowledgements
 
 Thanks to [Alexmarco](https://github.com/alexmarco) for the original
-[pi-subscription-limits](https://github.com/alexmarco/pi-subscription-limits), on
-which this project is based. The original implementation, tests, and
-[upstream changelog](docs/UPSTREAM_CHANGELOG.md) retain their attribution; see
-[PROVENANCE.md](docs/PROVENANCE.md).
+[pi-subscription-limits](https://github.com/alexmarco/pi-subscription-limits),
+on which this project is based.

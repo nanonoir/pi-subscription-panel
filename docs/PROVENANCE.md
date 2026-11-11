@@ -33,8 +33,9 @@ upstream repository, which close the README.
   package repository, homepage, and issue URLs point to it.
 - Version 1.0.0 is prepared locally under MIT. Git publication is authorized; the
   commit, push, and tag still require the owner's execution step.
-- npm publication is authorized for later but not yet performed: `private: true`
-  stays until the owner explicitly requests it, and the final npm name availability
-  must be checked then. Dependency audit findings in `docs/DEVELOPMENT.md` remain
-  open items for that step.
+- npm publication is authorized and the package is prepared (`private` removed,
+  `publishConfig` and `files` allowlist added), but it is not yet published:
+  `npm whoami` returned 401, so the real publish is pending npm authentication.
+  The final npm name availability must still be checked at publish time. Dependency
+  audit findings in `docs/DEVELOPMENT.md` remain open items for that step.
 - This project's version line (1.0.0) is independent from upstream's 1.0.2 baseline.
