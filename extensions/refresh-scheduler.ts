@@ -1,7 +1,10 @@
 import {
+  FAILURE_REASON,
   POLL_FAILURE,
   POLL_OUTCOME,
+  sanitizeFailure,
   toPollOutcome,
+  type FailureInfo,
   type PollFailureKind,
   type PollOutcome,
   type PollingProviderId,
@@ -23,6 +26,7 @@ export interface PollGaps {
 /** Minimum gaps between attempt starts. Antigravity stays opt-in elsewhere. */
 export const DEFAULT_GAPS: Record<PollingProviderId, PollGaps> = {
   [PROVIDER.CODEX]: { activeMs: 60_000, idleMs: 60_000 },
+  [PROVIDER.CLAUDE_CODE]: { activeMs: 5 * 60_000, idleMs: 5 * 60_000 },
   [PROVIDER.ANTHROPIC]: { activeMs: 30 * 60_000, idleMs: 30 * 60_000 },
   [PROVIDER.ANTIGRAVITY]: { activeMs: 3 * 60_000, idleMs: 20 * 60_000 },
 };
@@ -48,12 +52,60 @@ export interface PollJob {
   run: (signal: AbortSignal) => Promise<PollOutcome>;
 }
 
+/** What currently holds the next start back. */
+export const DEFERRAL = {
+  SERVER: "server",
+  BACKOFF: "backoff",
+  GAP: "gap",
+} as const;
+
+export type DeferralCause = (typeof DEFERRAL)[keyof typeof DEFERRAL];
+
+export interface Deferral {
+  cause: DeferralCause;
+  untilMs: number;
+}
+
+/** Last failure facts: allowlisted reason, validated status and time only. */
+export interface FailureRecord extends FailureInfo {
+  atMs: number;
+}
+
+/**
+ * The latest deadline still in the future. Ties resolve by priority: server
+ * deadline, then backoff, then the normal gap.
+ */
+export function effectiveDeferral(
+  deadlines: { gap?: number; backoff?: number; server?: number },
+  now: number,
+): Deferral | undefined {
+  let best: Deferral | undefined;
+  for (const [cause, at] of [
+    [DEFERRAL.SERVER, deadlines.server],
+    [DEFERRAL.BACKOFF, deadlines.backoff],
+    [DEFERRAL.GAP, deadlines.gap],
+  ] as const) {
+    if (at !== undefined && at > now && (!best || at > best.untilMs)) {
+      best = { cause, untilMs: at };
+    }
+  }
+  return best;
+}
+
 /** Scheduling metadata only: no quota values, credentials or accounts. */
 export interface ProviderSchedule {
   lastAttemptMs?: number;
   lastSuccessMs?: number;
   /** Earliest start given gaps, server deadline and backoff (blocks aside). */
   nextEligibleMs: number;
+  /** Separate deadlines that make up `nextEligibleMs`. */
+  gapUntilMs?: number;
+  backoffUntilMs?: number;
+  serverRetryAtMs?: number;
+  /** Effective cause while `nextEligibleMs` is in the future. */
+  deferral?: Deferral;
+  /** Cleared by the next success. */
+  lastFailure?: FailureRecord;
   inFlight: boolean;
   failureCount: number;
   lastError?: string;
@@ -126,6 +178,7 @@ interface ProviderMeta {
   backoffUntilMs?: number;
   failureCount: number;
   lastError?: string;
+  lastFailure?: FailureRecord;
   blocked?: ProviderSchedule["blocked"];
   /** Id of the attempt that holds exclusion. */
   inFlight?: number;
@@ -193,6 +246,7 @@ function recoverableFailure(providerId: PollingProviderId): PollOutcome {
     providerId,
     failure: POLL_FAILURE.RECOVERABLE,
     detail: "Quota read failed.",
+    reason: FAILURE_REASON.UNKNOWN,
   };
 }
 
@@ -223,12 +277,7 @@ export function createRefreshScheduler(
   let stopped = false;
 
   const jobs = new Map<PollingProviderId, PollJob>();
-  for (const job of options.jobs) {
-    if ((job.providerId as string) === PROVIDER.CLAUDE_CODE) {
-      throw new Error("Claude Code is response-driven and cannot be polled.");
-    }
-    jobs.set(job.providerId, job);
-  }
+  for (const job of options.jobs) jobs.set(job.providerId, job);
   const controllers = new Map<PollingProviderId, AbortController>();
 
   function metaFor(providerId: PollingProviderId): ProviderMeta {
@@ -293,14 +342,20 @@ export function createRefreshScheduler(
     );
   }
 
+  function gapEnd(
+    providerId: PollingProviderId,
+    meta: ProviderMeta,
+    now: number,
+  ): number | undefined {
+    return meta.lastAttemptMs === undefined
+      ? undefined
+      : meta.lastAttemptMs + gapFor(providerId, isActive(meta, now));
+  }
+
   function eligibleAt(providerId: PollingProviderId, now: number): number {
     const meta = metaFor(providerId);
-    const gapEnd =
-      meta.lastAttemptMs === undefined
-        ? 0
-        : meta.lastAttemptMs + gapFor(providerId, isActive(meta, now));
     return Math.max(
-      gapEnd,
+      gapEnd(providerId, meta, now) ?? 0,
       meta.serverRetryAtMs ?? 0,
       meta.backoffUntilMs ?? 0,
     );
@@ -309,6 +364,19 @@ export function createRefreshScheduler(
   function snapshot(providerId: PollingProviderId): ProviderSchedule {
     const meta = metaFor(providerId);
     const now = options.now();
+    const gapUntil = gapEnd(providerId, meta, now);
+    const deferral = effectiveDeferral(
+      {
+        ...(gapUntil === undefined ? {} : { gap: gapUntil }),
+        ...(meta.backoffUntilMs === undefined
+          ? {}
+          : { backoff: meta.backoffUntilMs }),
+        ...(meta.serverRetryAtMs === undefined
+          ? {}
+          : { server: meta.serverRetryAtMs }),
+      },
+      now,
+    );
     return {
       ...(meta.lastAttemptMs === undefined
         ? {}
@@ -317,6 +385,17 @@ export function createRefreshScheduler(
         ? {}
         : { lastSuccessMs: meta.lastSuccessMs }),
       nextEligibleMs: eligibleAt(providerId, now),
+      ...(gapUntil === undefined ? {} : { gapUntilMs: gapUntil }),
+      ...(meta.backoffUntilMs === undefined
+        ? {}
+        : { backoffUntilMs: meta.backoffUntilMs }),
+      ...(meta.serverRetryAtMs === undefined
+        ? {}
+        : { serverRetryAtMs: meta.serverRetryAtMs }),
+      ...(deferral ? { deferral } : {}),
+      ...(meta.lastFailure === undefined
+        ? {}
+        : { lastFailure: { ...meta.lastFailure } }),
       inFlight: meta.inFlight !== undefined,
       failureCount: meta.failureCount,
       ...(meta.lastError === undefined ? {} : { lastError: meta.lastError }),
@@ -340,6 +419,7 @@ export function createRefreshScheduler(
       meta.lastSuccessMs = now;
       meta.failureCount = 0;
       delete meta.lastError;
+      delete meta.lastFailure;
       delete meta.blocked;
       delete meta.serverRetryAtMs;
       delete meta.backoffUntilMs;
@@ -348,6 +428,7 @@ export function createRefreshScheduler(
     if (outcome.kind !== POLL_OUTCOME.FAILURE) return;
     meta.failureCount += 1;
     meta.lastError = REGISTRY_ERROR[outcome.failure];
+    meta.lastFailure = { ...sanitizeFailure(outcome), atMs: now };
     if (outcome.retryAtMs === undefined) delete meta.serverRetryAtMs;
     else meta.serverRetryAtMs = outcome.retryAtMs;
     if (
@@ -377,7 +458,11 @@ export function createRefreshScheduler(
       }
       if (outcome.kind === POLL_OUTCOME.SUCCESS) {
         // Only a real ready result with valid windows counts as success.
-        const checked = toPollOutcome(job.providerId, outcome.result);
+        const checked = toPollOutcome(job.providerId, outcome.result, {
+          ...(outcome.authContext === undefined
+            ? {}
+            : { authContext: outcome.authContext }),
+        });
         return checked.kind === POLL_OUTCOME.SUCCESS
           ? checked
           : recoverableFailure(job.providerId);
@@ -411,11 +496,17 @@ export function createRefreshScheduler(
         controllers.delete(providerId);
       }
       // A replaced or stopped controller never publishes or records a result;
-      // only a validated server cooldown may be kept, and never shortened. A
+      // only a validated server cooldown may be kept, and never shortened, with
+      // the allowlisted reason and status so a reload can explain the wait. A
       // validated authentication failure still blocks the shared provider with
-      // fixed sanitized text, so the next controller does not repeat it.
+      // fixed sanitized text, so the next controller does not repeat it. A late
+      // success records nothing: no stale success survives.
       if (controller.signal.aborted || !isLive()) {
         if (outcome.kind === POLL_OUTCOME.FAILURE) {
+          meta.lastFailure = {
+            ...sanitizeFailure(outcome),
+            atMs: options.now(),
+          };
           if (
             typeof outcome.retryAtMs === "number" &&
             Number.isFinite(outcome.retryAtMs)

@@ -225,8 +225,10 @@ test("failures carry no windows and keep only safe detail", () => {
     "failure",
     "kind",
     "providerId",
+    "reason",
     "status",
   ]);
+  assert.equal(outcome.reason, "http");
   const long = toPollOutcome(CODEX, failed({ detail: "x".repeat(500) }));
   assert.equal(long.detail.length, 200);
   assert.equal(
