@@ -43,6 +43,7 @@ function setup({ host = {}, owner = "a", clock = { t: T0 }, mutate } = {}) {
   mutate?.(prefs);
   const calls = { codex: [], anthropic: [], antigravity: [] };
   const delivered = [];
+  const deferred = [];
   const reader = (id) => (signal) =>
     new Promise((resolve) => calls[id].push({ signal, resolve }));
   const runtime = createRefreshRuntime({
@@ -54,14 +55,88 @@ function setup({ host = {}, owner = "a", clock = { t: T0 }, mutate } = {}) {
       poll: ({ signal }) =>
         new Promise((resolve) => calls.antigravity.push({ signal, resolve })),
     },
-    deliver: (result) => delivered.push(result),
+    // Deferred-start notices are waiting states, never quota; kept apart.
+    deliver: (result) =>
+      (result.availability === "waiting" ? deferred : delivered).push(result),
     now: () => clock.t,
     random: () => 0,
     host,
   });
   runtime.start();
-  return { runtime, prefs, calls, delivered, clock, host };
+  return { runtime, prefs, calls, delivered, deferred, clock, host };
 }
+
+test("a reload inside the gap reports the exact eligible time without reading", async () => {
+  const host = {};
+  const clock = { t: T0 };
+  const first = setup({ host, clock });
+  first.runtime.tick();
+  first.calls.codex[0].resolve({
+    kind: "success",
+    providerId: "codex",
+    result: {
+      providerId: "codex",
+      availability: "ready",
+      pools: [
+        {
+          id: "default",
+          windows: [
+            {
+              kind: "5h",
+              remainingPercent: 75,
+              observedAt: new Date(T0).toISOString(),
+              source: "read-only-endpoint",
+            },
+          ],
+        },
+      ],
+    },
+  });
+  await flush();
+  first.runtime.stop();
+  clock.t += 20 * SEC;
+  const reload = setup({ host, clock, owner: "b" });
+  assert.equal(reload.calls.codex.length, 0);
+  const codex = reload.deferred.find((item) => item.providerId === "codex");
+  assert.equal(codex.availability, "waiting");
+  assert.deepEqual(plain(codex.pools), []);
+  assert.equal(codex.retryAt, new Date(T0 + 60 * SEC).toISOString());
+  reload.runtime.tick();
+  assert.equal(reload.calls.codex.length, 0);
+  clock.t += 41 * SEC;
+  reload.runtime.tick();
+  assert.equal(reload.calls.codex.length, 1);
+});
+
+test("a late old request's Retry-After updates the empty deferred deadline without an early read", async () => {
+  const host = {};
+  const clock = { t: T0 };
+  const first = setup({ host, clock });
+  first.runtime.tick();
+  first.runtime.stop();
+  const reload = setup({ host, clock, owner: "b" });
+  clock.t += 10 * SEC;
+  first.calls.codex[0].resolve(
+    failure("codex", "rate-limit", { retryAtMs: T0 + 600 * SEC }),
+  );
+  await flush();
+  reload.runtime.tick();
+  // The late failure is retained as safe metadata: the panel now names the
+  // failure (reason unknown here) and the server deadline, not the gap.
+  const shown = reload.delivered.filter((item) => item.providerId === "codex");
+  assert.equal(shown.at(-1).availability, "error");
+  assert.deepEqual(plain(shown.at(-1).pools), []);
+  assert.match(shown.at(-1).detail, /Last read failed: reason unknown/);
+  assert.match(shown.at(-1).detail, /waiting on server deadline/);
+  assert.equal(shown.at(-1).retryAt, new Date(T0 + 600 * SEC).toISOString());
+  assert.equal(reload.calls.codex.length, 0);
+  clock.t = T0 + 599 * SEC;
+  reload.runtime.tick();
+  assert.equal(reload.calls.codex.length, 0);
+  clock.t = T0 + 601 * SEC;
+  reload.runtime.tick();
+  assert.equal(reload.calls.codex.length, 1);
+});
 
 const poll = (result, meta = {}, settled = Promise.resolve()) => ({
   result,
@@ -345,6 +420,91 @@ test("a passive response defers polling and drops an older in-flight result", as
   assert.equal(delivered.length, 0);
 });
 
+test("a passive 5h response racing a two-window read keeps the newer 5h and the weekly's original age", async () => {
+  const { mergeObservation } = loadRuntime({
+    entry: "provider-adapters",
+  }).entry;
+  const { runtime, calls, delivered, clock } = setup();
+  const win = (kind, remainingPercent, observedAt) => ({
+    kind,
+    remainingPercent,
+    observedAt,
+    source: "read-only-endpoint",
+  });
+  const result = (windows) => ({
+    providerId: "codex",
+    availability: "ready",
+    pools: [{ id: "default", windows }],
+  });
+  runtime.tick();
+  await flush();
+  // Request starts at T0; the passive response lands at T0+5s; the read
+  // completes at T0+10s and is stamped with that later completion time.
+  const iso = (ms) => new Date(ms).toISOString();
+  clock.t += 5 * SEC;
+  const passiveAt = iso(clock.t);
+  const passive = result([win("5h", 55, passiveAt)]);
+  runtime.observed("codex", passive);
+  clock.t += 5 * SEC;
+  const readAt = iso(clock.t);
+  calls.codex[0].resolve({
+    kind: "success",
+    providerId: "codex",
+    result: result([win("5h", 70, readAt), win("weekly", 40, readAt)]),
+  });
+  await flush();
+  assert.equal(delivered.length, 1);
+  const state = mergeObservation(passive, delivered[0]);
+  const windows = Object.fromEntries(
+    state.pools[0].windows.map((item) => [item.kind, item]),
+  );
+  assert.equal(windows["5h"].remainingPercent, 55);
+  assert.equal(windows["5h"].observedAt, passiveAt);
+  assert.equal(windows.weekly.remainingPercent, 40);
+  assert.equal(windows.weekly.observedAt, readAt);
+});
+
+test("a stale passive diagnostic during a newer read does not suppress the read window", async () => {
+  const { mergeObservation } = loadRuntime({
+    entry: "provider-adapters",
+  }).entry;
+  const { runtime, calls, delivered, clock } = setup();
+  const win = (kind, remainingPercent, observedAt) => ({
+    kind,
+    remainingPercent,
+    observedAt,
+    source: "read-only-endpoint",
+  });
+  const result = (windows) => ({
+    providerId: "codex",
+    availability: "ready",
+    pools: [{ id: "default", windows }],
+  });
+  const iso = (ms) => new Date(ms).toISOString();
+  runtime.tick();
+  await flush();
+  // The diagnostic carries a timestamp 60s before the attempt started.
+  const stalePassive = result([win("5h", 90, iso(clock.t - 60 * SEC))]);
+  clock.t += 5 * SEC;
+  runtime.observed("codex", stalePassive);
+  clock.t += 5 * SEC;
+  const readAt = iso(clock.t);
+  calls.codex[0].resolve({
+    kind: "success",
+    providerId: "codex",
+    result: result([win("5h", 70, readAt), win("weekly", 40, readAt)]),
+  });
+  await flush();
+  assert.equal(delivered.length, 1);
+  const state = mergeObservation(stalePassive, delivered[0]);
+  const windows = Object.fromEntries(
+    state.pools[0].windows.map((item) => [item.kind, item]),
+  );
+  assert.equal(windows["5h"].remainingPercent, 70);
+  assert.equal(windows["5h"].observedAt, readAt);
+  assert.equal(windows.weekly.observedAt, readAt);
+});
+
 test("a passive response never clears a manual block and explicit retry overrides deferral", async () => {
   const { runtime, calls, clock } = setup();
   runtime.tick();
@@ -381,7 +541,7 @@ test("a late 401 after stop/reload blocks the shared provider, visible on the ne
   assert.equal(third.delivered[0].providerId, "codex");
   assert.match(
     third.delivered[0].detail,
-    /^Authentication unavailable or rejected\. · manual retry: \/subscriptions retry codex$/,
+    /^Last read failed: reason unknown · manual retry: \/subscriptions retry codex$/,
   );
   assert.doesNotMatch(JSON.stringify(third.delivered), /secret|401/);
   third.runtime.tick();
@@ -435,7 +595,7 @@ test("a late 401 settling after the replacement started is surfaced once at the 
   assert.deepEqual(plain(reload.delivered[0].pools), []);
   assert.match(
     reload.delivered[0].detail,
-    /^Authentication unavailable or rejected\. · manual retry: \/subscriptions retry codex$/,
+    /^Last read failed: reason unknown · manual retry: \/subscriptions retry codex$/,
   );
   assert.doesNotMatch(JSON.stringify(reload.delivered), /secret|401/);
   clock.t += 3600 * SEC;
@@ -525,4 +685,67 @@ test("retry before the scheduler exists makes no request", () => {
   assert.equal(runtime.retry("codex"), undefined);
   runtime.tick();
   runtime.preferencesChanged();
+});
+
+const REGISTRY_KEY = Symbol.for("pi-subscription-panel.refresh-registry.v1");
+// The registry must come from the runtime's own realm, so a first runtime
+// creates it and the legacy record is injected into its provider map.
+const legacyHost = (meta) => {
+  const host = {};
+  setup({ host }).runtime.stop();
+  host[REGISTRY_KEY].scopes
+    .get("synthetic-agent-dir")
+    .providers.set("codex", { waiters: [], ...meta });
+  return host;
+};
+test("a retained HTTP 401 block shows the status with sanitized retry guidance", async () => {
+  const { runtime, calls, delivered } = setup();
+  runtime.tick();
+  calls.codex[0].resolve(
+    failure("codex", "authentication", {
+      reason: "http",
+      status: 401,
+      detail: "Bearer sk-secret",
+    }),
+  );
+  await flush();
+  assert.equal(delivered.length, 1);
+  runtime.observed("codex");
+  assert.match(
+    delivered[1].detail,
+    /^Last read failed: HTTP 401 · manual retry: \/subscriptions retry codex$/,
+  );
+  assert.doesNotMatch(delivered[1].detail, /secret/);
+});
+
+test("a legacy blocked record without lastFailure names an unknown reason and makes no read", () => {
+  const host = legacyHost({
+    failureCount: 1,
+    lastError: "Authentication unavailable or rejected.",
+    blocked: "authentication",
+    lastAttemptMs: T0,
+  });
+  const reload = setup({ host, clock: { t: T0 + 20 * SEC } });
+  reload.runtime.tick();
+  const shown = reload.delivered.filter((item) => item.providerId === "codex");
+  assert.equal(shown.length, 1);
+  assert.match(
+    shown[0].detail,
+    /^Last read failed: reason unknown · manual retry: \/subscriptions retry codex$/,
+  );
+  assert.equal(reload.calls.codex.length, 0);
+});
+
+test("a legacy gap record with failureCount does not imply a previous success", () => {
+  const host = legacyHost({ failureCount: 2, lastAttemptMs: T0 });
+  const reload = setup({ host, clock: { t: T0 + 20 * SEC } });
+  const codex = reload.delivered.find((item) => item.providerId === "codex");
+  assert.equal(codex.availability, "error");
+  assert.deepEqual(plain(codex.pools), []);
+  assert.match(
+    codex.detail,
+    /Last read failed: reason unknown · waiting on minimum refresh gap/,
+  );
+  assert.equal(codex.retryAt, new Date(T0 + 60 * SEC).toISOString());
+  assert.equal(reload.calls.codex.length, 0);
 });

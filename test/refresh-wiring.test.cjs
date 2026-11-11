@@ -253,13 +253,13 @@ test("an Antigravity retry deferred by the idle minimum makes no spawn until due
   assert.equal(h.children.length, 2);
 });
 
-test("Claude Code retry and responses never cause a request", async () => {
+test("Claude Code retry is deferred by the gap and responses never cause a request", async () => {
   const h = start();
   await h.handlers.session_start({}, h.ctx);
   await tick();
   const before = h.env.requests.length;
   await h.command("retry claude-code");
-  assert.match(h.notices.at(-1), /never queried/);
+  assert.doesNotMatch(h.notices.at(-1), /never queried/);
   h.handlers.message_end({
     message: { role: "assistant", provider: "claude-code" },
   });
@@ -437,8 +437,8 @@ test("a passive response after a surfaced block keeps the guidance beside the ne
   const shown = text(panel(h.env, "subscription:limits"));
   // The panel truncates the long state line, so match the visible prefix.
   assert.match(shown, /manual retry: \/subscriptions retry/);
-  assert.match(shown, /Authentication unavailable or rejected/);
-  assert.match(shown, /5h 63% remaining/);
+  assert.match(shown, /Last read failed: HTTP 401/);
+  assert.match(shown, /63% left/);
   assert.equal(h.env.requests.length, before);
   await h.advance(3_600_000);
   assert.equal(h.count(WHAM), 1);
@@ -456,7 +456,7 @@ test("a reload after an authentication block surfaces it without querying or res
   await tick();
   const shown = text(panel(h.env, "subscription:limits"));
   assert.match(shown, /manual retry: \/subscriptions retry/);
-  assert.match(shown, /Authentication unavailable or rejected/);
+  assert.match(shown, /Last read failed: HTTP 401/);
   assert.doesNotMatch(shown, /75/);
   assert.equal(h.env.requests.length, before);
 });

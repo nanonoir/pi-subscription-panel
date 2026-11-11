@@ -30,6 +30,12 @@ function setup({ loaded, save } = {}) {
     "./provider-adapters.ts": adapters,
     "./preferences.ts": preferences,
     "./subscription-actions.ts": actions,
+    "./refresh-scheduler.ts": load("refresh-scheduler", {
+      "./poll-outcome.ts": load("poll-outcome", {
+        "./quota-contracts.ts": contracts,
+      }),
+      "./quota-contracts.ts": contracts,
+    }),
     "./quota-presentation.ts": {
       buildQuotaPanel: (result, options) => ({
         id: `panel:${result.providerId}`,
@@ -116,11 +122,31 @@ test("start registers four fixed panels with initial states and options", async 
     now: NOW,
     staleAfterMs: 180_000,
   });
+  // Stale labels never undercut each provider's refresh gap plus 60 s grace.
+  assert.deepEqual(
+    registrations.map((item) => item.panel.options.staleAfterMs),
+    [180_000, 360_000, 1_260_000, 1_860_000],
+  );
   assert.equal(registrations[0].panel.result.availability, "waiting");
   const agy = registrations[2].panel.result;
   assert.equal(agy.availability, "unavailable");
   assert.match(agy.detail, /disabled/);
   assert.equal(saves.length, 0);
+});
+
+test("stale threshold follows configured gaps and never drops below the user's", async () => {
+  const prefs = defaults();
+  prefs.refresh.codexSeconds = 1200;
+  prefs.refresh.antigravity.idleSeconds = 3600;
+  prefs.staleAfterSeconds = 900;
+  const { controller, registrations } = setup({
+    loaded: async () => loadedOf(prefs),
+  });
+  await controller.start(tui());
+  assert.deepEqual(
+    registrations.map((item) => item.panel.options.staleAfterMs),
+    [1_260_000, 900_000, 3_660_000, 1_860_000],
+  );
 });
 
 test("antigravity auto mode waits for a later refresh", async () => {
@@ -212,10 +238,10 @@ test("commands only act in an active TUI session and re-render without disposing
     true,
   );
   await controller.command("display used", tui());
-  assert.ok(registrations.every((item) => item.panel.options.displayUsed));
+  assert.ok(registrations.every((item) => !item.panel.options.displayUsed));
   assert.ok(registrations.every((item) => item.disposed === 0));
   await tick();
-  assert.equal(saves.length, 2);
+  assert.equal(saves.length, 1);
 });
 
 test("saved preferences are applied by the next start", async () => {

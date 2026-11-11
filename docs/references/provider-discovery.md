@@ -33,12 +33,13 @@ five-hour/seven-day percentages, but exporting them here would require a separat
 verified integration. Interactive `/usage` is not evidence of a machine-readable
 polling API. No status-line/configuration modification is proposed without approval.
 
-**Owner decision resolved:** use message-driven quota updates from every ordinary
+**Historical owner decision (superseded for acquisition):** use message-driven quota updates from every ordinary
 Claude Code response carrying valid data. No three-minute throttle, scheduled
 queries, startup/idle refresh, or extra CLI/HTTP requests. Missing metadata retains
 the previous reading and its actual observation time; no reading means waiting or
 unavailable, never fabricated zeros. Countdown updates are local, not fresh quota
-observations. This is approved target behavior, not yet implemented. The canonical
+observations. The later owner-approved startup and scheduled endpoint read supersedes
+the no-query restriction; the response-driven behavior remains. The canonical
 policy is in [PRD provider integrations and refresh policy](../PRD.md#4-provider-integrations).
 
 ### Follow-up: both windows in the installed CLI schema

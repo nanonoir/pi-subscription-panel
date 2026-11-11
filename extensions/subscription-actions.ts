@@ -1,13 +1,14 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
   ANTIGRAVITY_MODE,
-  DISPLAY_MODE,
   normalizePreferences,
   type PreferencesSaveResult,
   type SubscriptionPreferences,
 } from "./preferences.ts";
+import { describeFailure } from "./poll-outcome.ts";
 import { PROVIDER, type ProviderId } from "./quota-contracts.ts";
-import type { RetryResult } from "./refresh-scheduler.ts";
+import type { ProviderStatus } from "./refresh-runtime.ts";
+import type { DeferralCause, RetryResult } from "./refresh-scheduler.ts";
 
 /** Fixed registration and menu order; panel ids live in the presentation. */
 export const PROVIDERS: { id: ProviderId; name: string }[] = [
@@ -18,11 +19,60 @@ export const PROVIDERS: { id: ProviderId; name: string }[] = [
 ];
 
 const USAGE =
-  "Usage: /subscriptions [toggle codex|claude-code|antigravity|anthropic | display remaining|used | refresh antigravity|collapsed on|off | retry codex|antigravity|anthropic]";
+  "Usage: /subscriptions [status | toggle codex|claude-code|antigravity|anthropic | refresh antigravity|collapsed on|off | retry codex|claude-code|antigravity|anthropic]";
 const SESSION_ONLY = "The change applies to this session only.";
 
 const utcTime = (epochMs: number): string =>
   `${new Date(epochMs).toISOString().slice(11, 19)} UTC`;
+
+const utcStamp = (epochMs: number): string =>
+  `${new Date(epochMs).toISOString().slice(0, 19).replace("T", " ")} UTC`;
+
+const CAUSE_TEXT: Record<DeferralCause, string> = {
+  server: "server retry deadline",
+  backoff: "failure backoff",
+  gap: "minimum gap",
+};
+
+/** One sanitized line per provider; allowlisted reason codes and times only. */
+function statusLine(
+  name: string,
+  { enabled, schedule }: ProviderStatus,
+  now: number,
+): string {
+  const parts = [enabled ? "polling on" : "polling off"];
+  if (schedule.blocked) parts.push(`paused (${schedule.blocked})`);
+  if (schedule.inFlight) parts.push("read in progress");
+  if (schedule.lastFailure) {
+    const { atMs } = schedule.lastFailure;
+    parts.push(
+      `last failure: ${describeFailure(schedule.lastFailure)} at ${utcStamp(atMs)}`,
+    );
+  } else if (schedule.failureCount > 0 || schedule.lastError !== undefined) {
+    // Legacy record: the failure is known, its reason and time are not. The
+    // raw `lastError` text is never displayed.
+    parts.push("last read failed: reason unknown");
+  } else if (schedule.lastSuccessMs !== undefined) {
+    parts.push(`last success ${utcStamp(schedule.lastSuccessMs)}`);
+  } else {
+    parts.push("no read result recorded");
+  }
+  for (const [label, at] of [
+    ["gap until", schedule.gapUntilMs],
+    ["backoff until", schedule.backoffUntilMs],
+    ["server deadline", schedule.serverRetryAtMs],
+  ] as const) {
+    if (at !== undefined && at > now) parts.push(`${label} ${utcStamp(at)}`);
+  }
+  parts.push(
+    schedule.blocked
+      ? "manual retry required (deadlines above still apply to the retry)"
+      : schedule.deferral
+        ? `next read after ${utcStamp(schedule.deferral.untilMs)} (${CAUSE_TEXT[schedule.deferral.cause]})`
+        : "next read eligible now",
+  );
+  return `${name}: ${parts.join(" · ")}`;
+}
 
 /** Honest, non-secret wording for an explicit retry request. */
 function retryMessage(name: string, result: RetryResult): string {
@@ -53,6 +103,9 @@ export interface SubscriptionActionsOptions {
    * quota read from the UI. Undefined when no scheduler is running.
    */
   retry?: (id: ProviderId) => RetryResult | undefined;
+  /** Read-only scheduling metadata; never causes a request. */
+  status?: () => ProviderStatus[] | undefined;
+  now?: () => number;
 }
 
 export function notifyWarning(ctx: ActionContext, message: string): void {
@@ -104,10 +157,12 @@ export function createSubscriptionActions(options: SubscriptionActionsOptions) {
     );
   }
 
-  function setDisplay(used: boolean, ctx: ActionContext): void {
-    const displayMode = used ? DISPLAY_MODE.USED : DISPLAY_MODE.REMAINING;
-    if (displayMode !== preferences.displayMode)
-      change({ ...preferences, displayMode }, ctx);
+  /** Legacy command: panels only show remaining; saved preferences stay as is. */
+  function explainDisplay(ctx: ActionContext): void {
+    ctx.ui?.notify?.(
+      "Panels always show remaining quota; the display setting is not changed.",
+      "info",
+    );
   }
 
   function setRefresh(
@@ -140,15 +195,29 @@ export function createSubscriptionActions(options: SubscriptionActionsOptions) {
 
   function retry(id: ProviderId, ctx: ActionContext): void {
     const name = PROVIDERS.find((item) => item.id === id)?.name ?? id;
-    if (id === PROVIDER.CLAUDE_CODE) {
+    const result = options.retry?.(id) ?? { status: "stopped" as const };
+    ctx.ui?.notify?.(retryMessage(name, result), "info");
+  }
+
+  /** Retained scheduling metadata only: no read, credential or persistence. */
+  function status(ctx: ActionContext): void {
+    const entries = options.status?.();
+    if (!entries) {
       ctx.ui?.notify?.(
-        "Claude Code updates only from its own responses and is never queried.",
+        "Refresh scheduling is not running; nothing to report.",
         "info",
       );
       return;
     }
-    const result = options.retry?.(id) ?? { status: "stopped" as const };
-    ctx.ui?.notify?.(retryMessage(name, result), "info");
+    const now = (options.now ?? Date.now)();
+    const lines = PROVIDERS.flatMap((item) => {
+      const entry = entries.find((candidate) => candidate.id === item.id);
+      return entry ? [statusLine(item.name, entry, now)] : [];
+    });
+    ctx.ui?.notify?.(
+      `Refresh status (no request made):\n${lines.join("\n")}`,
+      "info",
+    );
   }
 
   function menuOptions(): string[] {
@@ -157,8 +226,12 @@ export function createSubscriptionActions(options: SubscriptionActionsOptions) {
         (item) =>
           `${item.name} — ${preferences.expandedProviders.includes(item.id) ? "collapse" : "expand"} details`,
       ),
-      `Display — show ${preferences.displayMode === DISPLAY_MODE.USED ? "remaining" : "used"}`,
+      `Antigravity refresh — ${antigravityOn() ? "disable" : "enable"}`,
     ];
+  }
+
+  function antigravityOn(): boolean {
+    return preferences.refresh.antigravity.mode !== ANTIGRAVITY_MODE.OFF;
   }
 
   return {
@@ -195,7 +268,11 @@ export function createSubscriptionActions(options: SubscriptionActionsOptions) {
         const index = choices.indexOf(picked ?? "");
         if (index < 0) return;
         if (index < PROVIDERS.length) toggle(PROVIDERS[index].id, ctx);
-        else setDisplay(preferences.displayMode !== DISPLAY_MODE.USED, ctx);
+        else setRefresh("antigravity", !antigravityOn(), ctx);
+        return;
+      }
+      if (input === "status") {
+        status(ctx);
         return;
       }
       const refresh = /^refresh (antigravity|collapsed) (on|off)$/.exec(input);
@@ -219,7 +296,7 @@ export function createSubscriptionActions(options: SubscriptionActionsOptions) {
         verb === "display" &&
         (value === "used" || value === "remaining")
       )
-        setDisplay(value === "used", ctx);
+        explainDisplay(ctx);
       else notifyWarning(ctx, USAGE);
     },
   };

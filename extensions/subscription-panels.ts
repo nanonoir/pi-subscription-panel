@@ -25,6 +25,7 @@ import {
   type QuotaResult,
 } from "./quota-contracts.ts";
 import { buildQuotaPanel } from "./quota-presentation.ts";
+import { DEFAULT_GAPS } from "./refresh-scheduler.ts";
 import {
   PROVIDERS,
   createSubscriptionActions,
@@ -44,8 +45,36 @@ export interface SubscriptionPanelDeps {
   now?: () => number;
   /** Explicit user retry of a polling provider (the only UI-driven read). */
   retry?: SubscriptionActionsOptions["retry"];
+  /** Read-only scheduling metadata for `/subscriptions status`. */
+  status?: SubscriptionActionsOptions["status"];
   /** Called after a preference change, with the new normalized preferences. */
   onPreferencesChange?: (preferences: SubscriptionPreferences) => void;
+}
+
+/** Existing minimum of `staleAfterSeconds`; grace on top of a refresh gap. */
+const STALE_GRACE_MS = 60_000;
+
+/**
+ * A reading cannot be older than its provider's refresh gap and still be
+ * current, so the label threshold never undercuts that gap (plus a short grace).
+ * Antigravity uses its idle gap, the longest and so the most conservative one.
+ * Display only: no request, gap or bound changes.
+ */
+export function staleThresholdMs(
+  id: ProviderId,
+  preferences: SubscriptionPreferences,
+): number {
+  const { refresh } = preferences;
+  const gap =
+    id === PROVIDER.CODEX
+      ? Math.max(DEFAULT_GAPS[id].idleMs, refresh.codexSeconds * 1000)
+      : id === PROVIDER.ANTIGRAVITY
+        ? Math.max(
+            DEFAULT_GAPS[id].idleMs,
+            refresh.antigravity.idleSeconds * 1000,
+          )
+        : DEFAULT_GAPS[id].idleMs;
+  return Math.max(preferences.staleAfterSeconds * 1000, gap + STALE_GRACE_MS);
 }
 
 function initialState(
@@ -101,6 +130,8 @@ export function createSubscriptionPanels(
   const actions = createSubscriptionActions({
     save,
     retry: deps.retry,
+    ...(deps.status ? { status: deps.status } : {}),
+    now: clock,
     onChange: (preferences) => {
       syncAntigravity(preferences);
       render();
@@ -114,7 +145,7 @@ export function createSubscriptionPanels(
       expanded: preferences.expandedProviders.includes(id),
       displayUsed: preferences.displayMode === DISPLAY_MODE.USED,
       now: clock(),
-      staleAfterMs: preferences.staleAfterSeconds * 1000,
+      staleAfterMs: staleThresholdMs(id, preferences),
     });
   }
 
