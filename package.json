@@ -1,7 +1,6 @@
 {
   "name": "pi-subscription-panel",
   "version": "1.0.0",
-  "private": true,
   "description": "Read-only Pi Atelier subscription usage panel for Codex, Claude Code, Antigravity and native Anthropic OAuth",
   "license": "MIT",
   "repository": {
@@ -13,6 +12,15 @@
     "url": "https://github.com/nanonoir/pi-subscription-panel/issues"
   },
   "type": "module",
+  "files": [
+    "extensions/",
+    "docs/images/pi-subscription-panel-showcase.gif",
+    "CHANGELOG.md"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "keywords": [
     "pi-package",
     "pi-extension",
