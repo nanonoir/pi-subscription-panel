@@ -7,13 +7,19 @@ import {
   readStoredCredential,
 } from "@earendil-works/pi-coding-agent";
 import { createAntigravityAdapter } from "./antigravity-cli.ts";
+import {
+  readClaudeCodeAuthContext,
+  readClaudeCodeQuota,
+} from "./claude-code-quota.ts";
 import { toQuotaResult } from "./legacy-quota.ts";
 import {
   toPollOutcome,
   type PollOutcome,
   type PollingProviderId,
 } from "./poll-outcome.ts";
+import { createClaudeAdapter } from "./provider-adapters.ts";
 import { AVAILABILITY, PROVIDER, SOURCE } from "./quota-contracts.ts";
+import { getQuotaMemory } from "./quota-memory.ts";
 import {
   createRefreshRuntime,
   type RefreshRuntime,
@@ -41,6 +47,8 @@ type ProviderUsage = {
   serverRetryAt?: number;
   authUnavailable?: boolean;
   cancelled?: boolean;
+  /** Opaque digest of the account the request was actually made for. */
+  authContext?: string;
 };
 
 type JsonRecord = Record<string, unknown>;
@@ -300,6 +308,7 @@ const CANCELLED: ProviderUsage = { cancelled: true };
 async function readCodexUsage(
   ctx: ExtensionContext,
   signal?: AbortSignal,
+  digest?: (material: string) => string,
 ): Promise<ProviderUsage> {
   try {
     const providerAuth =
@@ -333,7 +342,11 @@ async function readCodexUsage(
       },
       signal,
     );
-    return parseCodexUsage(payload);
+    // Bound to the account of the token/account pair this request really used.
+    return {
+      ...parseCodexUsage(payload),
+      ...(digest ? { authContext: digest(accountId) } : {}),
+    };
   } catch (error) {
     if (error instanceof UsageHttpError) return usageFailure(error);
     return signal?.aborted ? CANCELLED : usageFailure(error);
@@ -475,21 +488,53 @@ function usageOutcome(
     {
       ...(usage.status === undefined ? {} : { httpStatus: usage.status }),
       ...(usage.authUnavailable ? { authUnavailable: true } : {}),
+      ...(usage.authContext === undefined
+        ? {}
+        : { authContext: usage.authContext }),
       ...(deadlines.length ? { retryAtMs: Math.max(...deadlines) } : {}),
     },
   );
+}
+
+/**
+ * Opaque digest of the Codex account behind Pi's stored OAuth credential, for
+ * in-memory quota retention only. Local metadata read: no network and no token
+ * renewal. Undefined (retention not provable) without a usable account id.
+ */
+async function codexAuthContext(
+  digest: (material: string) => string,
+): Promise<string | undefined> {
+  try {
+    const credential = readStoredCredential("openai-codex");
+    if (credential?.type !== "oauth") return undefined;
+    const accountId =
+      (typeof credential.access === "string"
+        ? accountIdFromAccessToken(credential.access)
+        : undefined) ??
+      (typeof credential.accountId === "string" && credential.accountId
+        ? credential.accountId
+        : undefined);
+    return accountId ? digest(accountId) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
   let runtime: RefreshRuntime | undefined;
   const controller = createSubscriptionPanels(pi, {
     retry: (id) => runtime?.retry(id),
+    status: () => runtime?.status(),
     onPreferencesChange: () => runtime?.preferencesChanged(),
   });
   // Distinct per extension instance: a reload is retired by shutdown, and any
   // other live instance in this process stays independent.
   const owner = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   const antigravity = createAntigravityAdapter({ enabled: true });
+  const claudeResponses = createClaudeAdapter();
+  const quotaMemory = getQuotaMemory();
+  const antigravityMarker = (): string =>
+    quotaMemory.digest("antigravity", "single-account-per-process");
   let timer: ReturnType<typeof setInterval> | undefined;
   let live = false;
   let generation = 0;
@@ -518,10 +563,18 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
       owner,
       preferences: () => controller.preferences(),
       readers: {
+        [PROVIDER.CLAUDE_CODE]: (signal) =>
+          readClaudeCodeQuota(
+            signal,
+            () => Date.now(),
+            (value) => quotaMemory.digest("claude-code", value),
+          ),
         [PROVIDER.CODEX]: async (signal) =>
           usageOutcome(
             PROVIDER.CODEX,
-            await readCodexUsage(ctx, signal),
+            await readCodexUsage(ctx, signal, (value) =>
+              quotaMemory.digest("codex", value),
+            ),
             Date.now(),
           ),
         [PROVIDER.ANTHROPIC]: async (signal) =>
@@ -531,7 +584,31 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
             Date.now(),
           ),
       },
-      antigravity,
+      antigravity: {
+        // Owner-approved assumption: one account per Pi process. The marker is
+        // a constant, not a verified identity; a successful read carries it.
+        poll: async (options) => {
+          const poll = await antigravity.poll(options);
+          return {
+            ...poll,
+            meta: { ...poll.meta, authContext: antigravityMarker() },
+          };
+        },
+      },
+      // Native Anthropic has no non-renewing local identity, so it is never
+      // retained across reload.
+      memory: {
+        store: quotaMemory,
+        context: {
+          [PROVIDER.ANTIGRAVITY]: async () => antigravityMarker(),
+          [PROVIDER.CODEX]: () =>
+            codexAuthContext((value) => quotaMemory.digest("codex", value)),
+          [PROVIDER.CLAUDE_CODE]: () =>
+            readClaudeCodeAuthContext(Date.now(), (value) =>
+              quotaMemory.digest("claude-code", value),
+            ),
+        },
+      },
       deliver: (result) => {
         if (mine === generation) controller.update(result);
       },
@@ -555,6 +632,10 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
 
   pi.on("message_end", (event) => {
     controller.observeMessage(event);
+    // A real Claude Code response is newer than any read in flight and defers
+    // the next one; a message without quota diagnostics changes nothing.
+    const passive = live ? claudeResponses.observeResponse(event) : undefined;
+    if (passive) runtime?.observed(PROVIDER.CLAUDE_CODE, passive);
   });
 
   pi.registerCommand("subscriptions", {
@@ -601,9 +682,10 @@ export default function subscriptionLimitsExtension(pi: ExtensionAPI): void {
     ] as const) {
       const update = usageFromHeaders(event.headers, legacy, now);
       if (!update) continue;
-      controller.update(toQuotaResult(id, update, now, SOURCE.RESPONSE_EVENT));
+      const passive = toQuotaResult(id, update, now, SOURCE.RESPONSE_EVENT);
+      controller.update(passive);
       // After the update: a retained block is re-shown over the new windows.
-      runtime?.observed(id);
+      runtime?.observed(id, passive);
     }
   });
 

@@ -33,7 +33,9 @@ const preferences = load("preferences", {
   "@earendil-works/pi-coding-agent": { getAgentDir: () => "unused" },
   "./quota-contracts.ts": contracts,
 });
+const outcomes = load("poll-outcome", { "./quota-contracts.ts": contracts });
 const actions = load("subscription-actions", {
+  "./poll-outcome.ts": outcomes,
   "./preferences.ts": preferences,
   "./quota-contracts.ts": contracts,
 });

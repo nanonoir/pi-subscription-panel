@@ -4,13 +4,12 @@ import {
   PROVIDER,
   displayRemainingPercent,
   type ProviderId,
+  type QuotaPool,
   type QuotaResult,
   type QuotaWindow,
 } from "./quota-contracts.ts";
 import {
-  age,
   clean,
-  countdown,
   duration,
   isStale,
   isStaleOrUnknown,
@@ -24,6 +23,10 @@ type Role = NonNullable<KeyValue["valueRole"]>;
 
 export interface QuotaPanelOptions extends AgeOptions {
   expanded: boolean;
+  /**
+   * Legacy saved preference, deliberately ignored: the panel always shows what
+   * is left. Reconcile the `display` controls and schema in a follow-up.
+   */
   displayUsed: boolean;
 }
 
@@ -31,6 +34,7 @@ const MAX_ROWS = 24;
 const MAX_ROW_CHARS = 160;
 const MAX_LABEL_CHARS = 24;
 const MAX_DETAIL_CHARS = 80;
+const MAX_POOL_NAME_CHARS = 40;
 
 const PANELS: Record<ProviderId, { id: `${string}:${string}`; title: string }> =
   {
@@ -65,8 +69,8 @@ function hasPercent(window: QuotaWindow): boolean {
 }
 
 const EXPECTED_WINDOWS = [
-  { kind: "5h", note: "Five-hour window not reported" },
-  { kind: "1w", note: "Weekly window not reported" },
+  { kind: "5h", note: "5h missing" },
+  { kind: "1w", note: "1w missing" },
 ];
 
 /** Notes for known 5h/1w windows missing from what the provider reported. */
@@ -89,17 +93,86 @@ function missingNotes(
   );
 }
 
-function percentText(window: QuotaWindow, displayUsed: boolean): string {
+/** Claude Code has no probe of its own: it fills in on the next response. */
+function noDataText(result: QuotaResult): string {
+  return result.providerId === PROVIDER.CLAUDE_CODE &&
+    result.availability === AVAILABILITY.WAITING
+    ? "(waiting refresh)"
+    : (NO_DATA_TEXT[result.availability] ?? "Unavailable");
+}
+
+/** Time until reset without a label: the window name already gives context. */
+function resetText(window: QuotaWindow, now: number): string {
+  const time = parseTime(window.resetsAt);
+  if (time === undefined || !Number.isFinite(now)) return "unknown";
+  return time <= now ? "due" : duration(time - now);
+}
+
+function percentText(window: QuotaWindow): string {
   const shown = displayRemainingPercent(window);
-  const value = displayUsed ? 100 - shown : shown;
-  const text = `${Number(value.toFixed(1))}% ${displayUsed ? "used" : "remaining"}`;
-  const raw = window.remainingPercent;
-  const note =
-    raw === shown
-      ? ""
-      : ` (reported ${Number(raw.toFixed(1))}% remaining, out of range; shown clamped)`;
-  const level = shown <= 10 ? " · LOW" : shown <= 30 ? " · limited" : "";
-  return `${text}${level}${note}`;
+  return `${Number(shown.toFixed(1))}% left`;
+}
+
+/** Known windows first (5h, then weekly), the rest by name; never input order. */
+const WINDOW_ORDER = EXPECTED_WINDOWS.map((expected) => expected.kind);
+
+function windowRank(window: QuotaWindow): number {
+  const index = WINDOW_ORDER.indexOf(window.kind);
+  return index < 0 ? WINDOW_ORDER.length : index;
+}
+
+function sortedWindows(windows: QuotaWindow[]): QuotaWindow[] {
+  return [...windows].sort(
+    (a, b) => windowRank(a) - windowRank(b) || a.kind.localeCompare(b.kind),
+  );
+}
+
+function sortedPools(pools: QuotaPool[]): QuotaPool[] {
+  return pools
+    .map((pool) => ({ ...pool, windows: sortedWindows(pool.windows) }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+}
+
+const ACRONYMS = new Set(["ai", "gpt", "llm"]);
+
+/** `gemini-3_pro` -> `Gemini 3 Pro`; the raw id is only a fallback. */
+function poolName(id: string): string {
+  const words = clean(id, MAX_POOL_NAME_CHARS)
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .map((word) =>
+      ACRONYMS.has(word.toLowerCase())
+        ? word.toUpperCase()
+        : word.charAt(0).toUpperCase() + word.slice(1),
+    );
+  return words.join(" ") || "Pool";
+}
+
+/** Exhausted/low state as its own compact row, so the meter keeps its room. */
+function levelRows(window: QuotaWindow): KeyValue[] {
+  if (!hasPercent(window)) return [];
+  const shown = displayRemainingPercent(window);
+  if (shown <= 0)
+    return [{ label: "", value: "EXHAUSTED", valueRole: "error" }];
+  if (shown <= 10) return [{ label: "", value: "LOW", valueRole: "warning" }];
+  return [];
+}
+
+/** Reported value outside 0-100: the meter is clamped, the row says so. */
+function isOutOfRange(window: QuotaWindow): boolean {
+  return (
+    hasPercent(window) &&
+    window.remainingPercent !== displayRemainingPercent(window)
+  );
+}
+
+/** Short separate row so the percent row stays inside narrow sidebars. */
+function rangeRow(window: QuotaWindow): KeyValue {
+  return {
+    label: "",
+    value: `CLAMP ${Number(window.remainingPercent.toFixed(1))}%`,
+    valueRole: "caution",
+  };
 }
 
 function semanticRole(window: QuotaWindow): Role {
@@ -107,37 +180,98 @@ function semanticRole(window: QuotaWindow): Role {
   return shown <= 10 ? "warning" : shown <= 30 ? "caution" : "success";
 }
 
+/** Bar and percentage line; never invents a value that was not reported. */
+function percentRow(window: QuotaWindow): KeyValue {
+  if (!hasPercent(window)) {
+    return {
+      label: "",
+      value: "Unavailable",
+      valueRole: "muted",
+    };
+  }
+  const shown = displayRemainingPercent(window);
+  return {
+    label: "",
+    value: percentText(window),
+    valueRole: semanticRole(window),
+    progress: shown / 100,
+  };
+}
+
+interface Freshness {
+  /** Provider-level warning; absent when every window is vouched for. */
+  rows: KeyValue[];
+  /** Windows need their own marker only when freshness differs between them. */
+  mark: boolean;
+}
+
+/**
+ * One compact provider-level freshness warning. Fresh readings show no age; a
+ * provider whose windows are all equally doubtful is not repeated per window.
+ */
+function freshness(windows: QuotaWindow[], options: AgeOptions): Freshness {
+  const doubtful = windows.filter((w) => isStaleOrUnknown(w, options));
+  if (doubtful.length === 0) return { rows: [], mark: false };
+  const stale = doubtful.filter((w) => isStale(w, options));
+  const warn = (value: string): Freshness["rows"] => [
+    { label: "", value, valueRole: "caution" },
+  ];
+  if (doubtful.length === windows.length && stale.length === windows.length) {
+    const newest = Math.max(
+      ...stale.map((w) => parseTime(w.observedAt) ?? Number.NEGATIVE_INFINITY),
+    );
+    return {
+      rows: warn(`STALE · ${duration(Math.max(0, options.now - newest))} ago`),
+      mark: false,
+    };
+  }
+  if (doubtful.length === windows.length && stale.length === 0)
+    return { rows: warn("AGE UNKNOWN"), mark: false };
+  return {
+    rows: warn(`STALE/UNKNOWN ${doubtful.length}/${windows.length}`),
+    mark: true,
+  };
+}
+
+/**
+ * Same structure for every window: name with reset, then bar with remaining.
+ * The compact (collapsed) form keeps only the bar, led by the window name.
+ */
 function windowRows(
   window: QuotaWindow,
   options: QuotaPanelOptions,
+  mark: boolean,
+  withReset: boolean,
 ): KeyValue[] {
-  const label = clean(window.kind, MAX_LABEL_CHARS) || "window";
-  const timing: KeyValue = {
-    label: "",
-    value: `${countdown(window.resetsAt, options.now)} · ${age(window, options)}`,
-    valueRole: isStale(window, options) ? "caution" : "muted",
-  };
-  if (!hasPercent(window)) {
-    return [
-      {
-        label,
-        labelRole: "muted",
-        value: "Unavailable (percentage not reported)",
-        valueRole: "muted",
-      },
-      timing,
-    ];
-  }
-  const shown = displayRemainingPercent(window);
+  const doubtful = isStaleOrUnknown(window, options);
+  const name = clean(window.kind, MAX_LABEL_CHARS) || "window";
+  const reset = resetText(window, options.now);
   return [
+    ...(withReset
+      ? [
+          {
+            label: name,
+            labelRole: "muted" as const,
+            // The marker leads so narrow hosts truncate the detail, not it.
+            value:
+              mark && doubtful
+                ? `${isStale(window, options) ? "STALE" : "no age"} · ${reset}`
+                : reset,
+            valueRole: doubtful ? ("caution" as const) : ("muted" as const),
+          },
+        ]
+      : []),
     {
-      label,
-      labelRole: "muted",
-      value: percentText(window, options.displayUsed),
-      valueRole: semanticRole(window),
-      progress: (options.displayUsed ? 100 - shown : shown) / 100,
+      ...percentRow(window),
+      ...(withReset ? {} : { label: name, labelRole: "muted" as const }),
     },
-    timing,
+    ...levelRows(window),
+    ...(isOutOfRange(window) ? [rangeRow(window)] : []),
+    // Compact form has no reset row to carry the marker; a separate short row
+    // keeps the meter intact while still identifying the doubtful window.
+    ...(!withReset && mark && doubtful
+      ? [cautionRow(isStale(window, options) ? "STALE" : "AGE UNKNOWN")]
+      : []),
   ];
 }
 
@@ -145,116 +279,148 @@ function noteRow(note: string): KeyValue {
   return { label: "", value: note, valueRole: "muted" };
 }
 
-function summary(result: QuotaResult, options: QuotaPanelOptions): KeyValue {
-  const pools = result.pools.filter((pool) => pool.windows.length > 0);
-  const windows = pools.flatMap((pool) => pool.windows);
-  if (windows.length === 0) {
-    return {
-      label: "Status",
-      value: NO_DATA_TEXT[result.availability] ?? "Unavailable",
-      valueRole: result.availability === AVAILABILITY.ERROR ? "error" : "muted",
-    };
-  }
-  const prefix =
-    result.availability === AVAILABILITY.READY
-      ? ""
-      : `Old data (${result.availability}) · `;
-  const observed = (window: QuotaWindow): number =>
-    parseTime(window.observedAt) ?? Number.NEGATIVE_INFINITY;
-  const newest = windows.reduce((a, b) => (observed(b) > observed(a) ? b : a));
-  const doubtful = windows.filter((w) => isStaleOrUnknown(w, options)).length;
-  // Freshness warning leads the row so bounding never truncates it away.
-  const warning =
-    doubtful === 0
-      ? ""
-      : windows.length > 1
-        ? `STALE/UNKNOWN ${doubtful}/${windows.length} · `
-        : `${isStale(windows[0], options) ? "STALE" : "AGE UNKNOWN"} · `;
-  const caveats = [
-    ...new Set(
-      pools.flatMap((pool) =>
-        missingNotes(
-          result.providerId,
-          result.providerId === PROVIDER.ANTIGRAVITY ? pool.windows : windows,
-        ),
-      ),
-    ),
-  ];
-  const suffix = caveats.map((caveat) => ` · ${caveat}`).join("");
-  if (result.pools.length > 1) {
-    const empty = result.pools.length - pools.length;
-    return {
-      label: "Status",
-      value: `${warning}${prefix}${result.pools.length} pools${empty > 0 ? ` (${empty} without data)` : ""} · ${age(newest, options)}${suffix}`,
-      valueRole: doubtful > 0 ? "caution" : "muted",
-    };
-  }
-  const valid = windows.filter(hasPercent);
-  const tightest = (valid.length > 0 ? valid : windows).reduce((a, b) =>
-    hasPercent(b) && displayRemainingPercent(b) < displayRemainingPercent(a)
-      ? b
-      : a,
-  );
-  const [row] = windowRows(tightest, options);
+function cautionRow(note: string): KeyValue {
+  return { label: "", value: note, valueRole: "caution" };
+}
+
+function noDataRow(result: QuotaResult): KeyValue {
   return {
-    ...row,
-    value: `${warning}${prefix}${clean(tightest.kind, MAX_LABEL_CHARS) || "window"} ${row.value} · ${age(tightest, options)}${suffix}`,
-    label: "Status",
-    labelRole: undefined,
+    label: "",
+    value: noDataText(result),
+    valueRole: result.availability === AVAILABILITY.ERROR ? "error" : "muted",
   };
 }
 
-function details(result: QuotaResult, options: QuotaPanelOptions): KeyValue[] {
-  const rows: KeyValue[] = [];
-  if (result.availability !== AVAILABILITY.READY) {
-    const detail = clean(result.detail, MAX_DETAIL_CHARS);
-    rows.push({
+/** Availability detail for a result that is not a clean, current reading. */
+function stateRows(
+  result: QuotaResult,
+  options: QuotaPanelOptions,
+): KeyValue[] {
+  if (result.availability === AVAILABILITY.READY) return [];
+  const detail = clean(result.detail, MAX_DETAIL_CHARS);
+  const rows: KeyValue[] = [
+    {
       label: "State",
-      value: `${NO_DATA_TEXT[result.availability] ?? "Unavailable"}${detail ? ` · ${detail}` : ""}`,
+      value: `${noDataText(result)}${detail ? ` · ${detail}` : ""}`,
       valueRole: result.availability === AVAILABILITY.ERROR ? "error" : "muted",
-    });
-    const retry = parseTime(result.retryAt);
-    if (retry !== undefined) {
-      rows.push({
-        label: "",
-        value: `retry ${retry <= options.now ? "due" : `in ${duration(retry - options.now)}`}`,
-        valueRole: "muted",
-      });
-    }
+    },
+  ];
+  const retry = parseTime(result.retryAt);
+  if (retry !== undefined) {
+    rows.push(
+      noteRow(
+        `retry ${retry <= options.now ? "due" : `in ${duration(retry - options.now)}`}`,
+      ),
+    );
   }
+  return rows;
+}
+
+/** Expanded body: every window with its reset, grouped by readable pool. */
+function expandedRows(
+  result: QuotaResult,
+  pools: QuotaPool[],
+  options: QuotaPanelOptions,
+  mark: boolean,
+): KeyValue[] {
+  const rows: KeyValue[] = [];
   const labelPools =
     result.pools.length > 1 || result.providerId === PROVIDER.ANTIGRAVITY;
   const perPool = result.providerId === PROVIDER.ANTIGRAVITY;
-  for (const pool of result.pools) {
+  for (const pool of pools) {
     const empty = pool.windows.length === 0;
     if (labelPools || empty) {
       rows.push({
-        label: `Pool ${clean(pool.id, MAX_LABEL_CHARS)}`,
-        value: "",
-        labelRole: "primary",
+        label: "",
+        value: poolName(pool.id),
+        valueRole: "primary",
       });
     }
     if (empty) {
       const detail = clean(result.detail, MAX_DETAIL_CHARS);
       rows.push(
-        noteRow(
-          `${NO_DATA_TEXT[result.availability] ?? "Unavailable"}${detail ? ` · ${detail}` : ""}`,
-        ),
+        noteRow(`${noDataText(result)}${detail ? ` · ${detail}` : ""}`),
       );
     }
     for (const window of pool.windows)
-      rows.push(...windowRows(window, options));
+      rows.push(...windowRows(window, options, mark, true));
     if (perPool) {
       for (const note of missingNotes(result.providerId, pool.windows))
         rows.push(noteRow(note));
     }
   }
   if (!perPool) {
-    const all = result.pools.flatMap((pool) => pool.windows);
+    const all = pools.flatMap((pool) => pool.windows);
     for (const note of missingNotes(result.providerId, all))
       rows.push(noteRow(note));
   }
   return rows;
+}
+
+/**
+ * Collapsed body: the same windows as compact meters, so a collapsed panel is
+ * never mistaken for an incomplete one. Several pools add a count and a name
+ * row before each pool's meters.
+ */
+function collapsedRows(
+  result: QuotaResult,
+  pools: QuotaPool[],
+  options: QuotaPanelOptions,
+  mark: boolean,
+): KeyValue[] {
+  const withData = pools.filter((pool) => pool.windows.length > 0);
+  const caveats = [
+    ...new Set(
+      withData.flatMap((pool) =>
+        missingNotes(
+          result.providerId,
+          result.providerId === PROVIDER.ANTIGRAVITY
+            ? pool.windows
+            : withData.flatMap((item) => item.windows),
+        ),
+      ),
+    ),
+  ];
+  const old: KeyValue[] =
+    result.availability === AVAILABILITY.READY
+      ? []
+      : [
+          {
+            label: "",
+            value: `OLD (${result.availability})`,
+            valueRole:
+              result.availability === AVAILABILITY.ERROR ? "error" : "caution",
+          },
+        ];
+  if (result.pools.length > 1) {
+    const empty = result.pools.length - withData.length;
+    // Availability leads so the display limit can never drop it.
+    return [
+      ...old,
+      {
+        label: "Status",
+        value: `${result.pools.length} pools`,
+        valueRole: "muted",
+      },
+      ...(empty > 0 ? [noteRow(`${empty} without data`)] : []),
+      ...withData.flatMap((pool) => [
+        { label: "", value: poolName(pool.id), valueRole: "primary" as const },
+        ...pool.windows.flatMap((window) =>
+          windowRows(window, options, mark, false),
+        ),
+      ]),
+      ...caveats.map(cautionRow),
+    ];
+  }
+  return [
+    ...old,
+    ...withData.flatMap((pool) =>
+      pool.windows.flatMap((window) =>
+        windowRows(window, options, mark, false),
+      ),
+    ),
+    ...caveats.map(cautionRow),
+  ];
 }
 
 function bound(row: KeyValue): KeyValue {
@@ -269,10 +435,33 @@ export function buildQuotaPanel(
   options: QuotaPanelOptions,
 ): Contribution {
   const identity = PANELS[result.providerId];
-  const entries = [
-    summary(result, options),
-    ...(options.expanded ? details(result, options) : []),
-  ];
+  const pools = sortedPools(result.pools);
+  const windows = pools.flatMap((pool) => pool.windows);
+  const { rows: warnings, mark } = freshness(windows, options);
+  const entries: KeyValue[] = [];
+  if (windows.length === 0) {
+    // Expanded, a non-ready result is described once by its State row.
+    if (options.expanded && result.availability !== AVAILABILITY.READY)
+      entries.push(
+        ...stateRows(result, options),
+        ...expandedRows(result, pools, options, mark),
+      );
+    else {
+      entries.push(noDataRow(result));
+      if (options.expanded)
+        entries.push(...expandedRows(result, pools, options, mark));
+    }
+  } else if (options.expanded) {
+    // Windows carry their own values and the State rows carry availability, so
+    // no separate summary precedes them; the freshness warning still leads.
+    entries.push(
+      ...stateRows(result, options),
+      ...warnings,
+      ...expandedRows(result, pools, options, mark),
+    );
+  } else {
+    entries.push(...warnings, ...collapsedRows(result, pools, options, mark));
+  }
   if (entries.length > MAX_ROWS) {
     const omitted = entries.length - (MAX_ROWS - 1);
     entries.length = MAX_ROWS - 1;

@@ -96,7 +96,9 @@ test("a TUI start registers four panels and reads only Codex and native Anthropi
   assert.match(text(panel(env, "subscription:limits")), /75/);
   assert.match(text(panel(env, "subscription:anthropic")), /90/);
   assert.equal(env.intervals.length, 1);
-  assert.deepEqual(env.fileCalls, ["read"]);
+  // Preferences, then two checks of the same missing Claude Code credential
+  // file: the restore identity and the read itself (no separate pre-read).
+  assert.deepEqual(env.fileCalls, ["read", "read", "read"]);
 });
 
 test("non-TUI sessions make no request and register nothing", async () => {
@@ -124,7 +126,9 @@ test("Claude responses, toggles and the local tick never query Claude Code", asy
   await commands.subscriptions.handler("toggle codex", ctx);
   await commands.subscriptions.handler("display used", ctx);
   await tick();
-  assert.match(text(panel(env, "subscription:limits")), /1w 40% used/);
+  // The legacy saved "used" preference never flips the display: 40 used = 60 left.
+  assert.match(text(panel(env, "subscription:limits")), /60% left/);
+  assert.doesNotMatch(text(panel(env, "subscription:limits")), /used/);
   assert.equal(env.requests.length, before);
   assert.ok(env.fileCalls.includes("rename"));
   assert.ok(env.registrations.every((item) => item.disposed === 0));

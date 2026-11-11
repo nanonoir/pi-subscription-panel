@@ -13,8 +13,9 @@ const START = Date.parse("2026-01-01T12:00:00Z");
  *
  * Options: `entry` (module name, default "index"), `expose` (extra exports to
  * attach to the entry), `credential` (stored credential), `fetch`, and
- * `readFile` (fs/promises override; defaults to ENOENT), and `spawn`
- * (child_process override; defaults to throwing).
+ * `readFile`/`lstat` (fs/promises overrides; default to ENOENT), and `spawn`
+ * (child_process override; defaults to throwing), `agentDir` (mutable agent
+ * directory) and `sandbox` (an earlier load's `sandbox`, for a real reload).
  */
 function loadRuntime(options = {}) {
   const env = {
@@ -40,8 +41,12 @@ function loadRuntime(options = {}) {
   const record = (name) => async () => void env.fileCalls.push(name);
   const mocks = {
     "@earendil-works/pi-coding-agent": {
-      readStoredCredential: () => options.credential,
-      getAgentDir: () => "synthetic-agent-dir",
+      // A function models a stored credential that changes while running.
+      readStoredCredential: () =>
+        typeof options.credential === "function"
+          ? options.credential()
+          : options.credential,
+      getAgentDir: () => options.agentDir ?? "synthetic-agent-dir",
     },
     "pi-atelier/extensions/index.ts": {
       registerSidebarPanel(_pi, panel, registration) {
@@ -68,13 +73,14 @@ function loadRuntime(options = {}) {
     },
     "node:fs/promises": {
       readFile: options.readFile ?? missing,
+      lstat: options.lstat ?? missing,
       mkdir: record("mkdir"),
       writeFile: record("write"),
       rename: record("rename"),
       rm: record("rm"),
     },
   };
-  const sandbox = {
+  const fresh = {
     Buffer,
     AbortController,
     AbortSignal,
@@ -105,6 +111,11 @@ function loadRuntime(options = {}) {
       timer.cleared = true;
     },
   };
+  // `sandbox` reuses an earlier load's global, so its realm-wide registries
+  // survive while every module is evaluated again: a real module reload.
+  const sandbox = options.sandbox
+    ? Object.assign(options.sandbox, fresh)
+    : fresh;
   vm.createContext(sandbox);
 
   const cache = new Map();
@@ -131,7 +142,11 @@ function loadRuntime(options = {}) {
     );
     return exports;
   }
-  return { env, entry: loadModule(options.entry ?? "index", options.expose) };
+  return {
+    env,
+    sandbox,
+    entry: loadModule(options.entry ?? "index", options.expose),
+  };
 }
 
 module.exports = { loadRuntime, START };

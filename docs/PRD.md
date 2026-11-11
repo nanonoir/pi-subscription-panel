@@ -45,17 +45,17 @@ command/menu controls instead of clickable headings: the quota view stays visibl
 without running a command; `/subscriptions` is only an optional interaction control.
 
 - **Codex** — collapsed heading: provider name + concise quota summary if available. Expanded: 5h / 1w bars, remaining percentage, reset countdown, freshness.
-- **Claude Code** — same behavior; display `Unavailable` or `Awaiting usage data` when no supported read-only source exists.
+- **Claude Code** — same behavior; show `(waiting refresh)` while awaiting a reading, or a truthful unavailable/error state.
 - **Antigravity** — same behavior, respecting that the service may expose multiple distinct quota pools; **never merge independent pools into a single misleading percentage**.
 
 Requirements:
 
 1. A provider header remains visible while collapsed. Collapsing affects rendering only; it does not delete usage state.
 2. Each provider has independent expansion state. Default: all expanded on first launch; user preference persists globally across sessions.
-3. Progress colors are semantic and accessible in dark and no-color modes. Clearly label whether bars represent **remaining** or **used** percentages; default to **remaining**.
+3. Progress colors are semantic and accessible in dark and no-color modes. Bars and percentages always represent **remaining** quota and are labelled `left`.
 4. Display `5h` and `1w` only if those windows exist; otherwise show an explanatory unavailable state (not a 0% bar).
-5. Show reset countdown from an absolute reset timestamp; countdown updates locally without an HTTP request.
-6. Each provider shows the age of its last successful reading; stale data must be marked.
+5. Show the window and countdown together without a redundant `reset` label, with bar and remaining percentage on the next line. Countdown updates locally without an HTTP request.
+6. Fresh readings need no age label; stale or unknown-age data must be marked, including individual windows when their freshness differs.
 7. Avoid overflowing narrow sidebars. Honor Atelier layout limits and resizing; no unsolicited global keyboard shortcuts.
 8. Do not assume `registerSidebarPanel()` provides clickable rows. Investigate actual API, keyboard routing and event registration before choosing accordion implementation.
 9. Preserve Atelier Settings → Display as the authority for panel visibility/order.
@@ -120,8 +120,8 @@ Implementation can improve types after source verification; all percentages must
 - Inspect the _installed_ extension's exact code, provider id, exposed events and metadata; inspect installed Claude Code CLI's documented usage/status surfaces.
 - **Approved refresh behavior:** inspect quota metadata after every ordinary Claude Code response and update each window for which valid reported data is present. Do not throttle these message-driven updates to a three-minute interval: they cause no additional provider request.
 - Use the existing extension's `claude-code.rate-limit` message diagnostic. Its optional internal `unifiedWindows` fields may report actual five-hour/weekly utilization and reset timestamps; the owner accepts this compatibility risk. Validate fields, fail closed on schema changes, and never infer missing percentages from token counts or duplicate the limiting window into both windows.
-- Do not perform scheduled, startup, idle, or background quota queries for Claude Code. No extra CLI invocation, usage-endpoint request, status-line configuration change, or inference probe is authorized by this behavior. A different source requires a new owner decision.
-- Before the first valid reading, show `Awaiting usage data` or unavailable. If a response omits quota metadata or a window, retain the last valid reading for that window, preserve its observation timestamp, and show its age/staleness. No Claude activity means no fresh quota reading. Reset countdowns continue locally without a provider request.
+- The owner subsequently approved a read-only startup and scheduled usage-endpoint query using only the existing Claude Code local credential. One explicitly authorized credential read and GET returned HTTP 200 with both windows; no live values were retained. Do not refresh the token, invoke the CLI, change status-line configuration, use another credential store, or send inference to measure quota.
+- Before the first valid reading, show `(waiting refresh)` or a truthful unavailable/error state. If an update omits a window, retain its last valid reading and observation timestamp, showing age/staleness. Countdown updates are local.
 - Never silently switch to native Pi `anthropic` `/login` or to `pi-claude-bridge`.
 - If no safe compatible signal is found, show a truthful `Unsupported / waiting for data` state and deliver the rest of the extension.
 
@@ -135,17 +135,17 @@ Implementation can improve types after source verification; all percentages must
 
 ## 5. Refresh policy
 
-**Goal:** a visually current dashboard without unnecessary requests. Claude Code is strictly **message-driven**: inspect every ordinary response, without a polling interval or extra quota request. For providers supporting authorized read-only polling, target 3-minute freshness during active sessions **where supported**, not a guaranteed API request interval. Use one reusable activity-aware scheduler for polling-capable adapters; Claude Code must not schedule quota queries through it. Never use inference as a quota probe.
+**Goal:** a visually current dashboard without unnecessary requests. Use the reusable scheduler for authorized read-only polling, including Claude Code. A three-minute freshness target where supported is not a guaranteed API request interval. Never use inference as a quota probe.
 
 - Update reset countdowns locally every 60 seconds (no network calls).
-- Apply valid quota metadata immediately after every ordinary provider response. For Claude Code this is the only approved acquisition path, with no three-minute throttle; processing a response is not a separate quota query.
+- Apply valid quota metadata immediately after every ordinary provider response, without a three-minute throttle. Claude Code passive observations defer its next read and take precedence over older in-flight data for the windows supplied.
 - Use at most one in-flight quota request per provider and coordinate across sessions where practical.
 - **Approved coordination scope:** enforce per-process exclusion/cooldowns across
   extension reloads without sharing quota values or account identifiers. Separate
   Pi processes may query independently; cross-process deduplication is not claimed.
 - Suggested initial **configurable experimental defaults** (subject to adapter/source validation):
   - Codex: 60 seconds while active, or preserve upstream behavior if no issue is observed.
-  - Claude Code: **response-event only**. Inspect each normal response; no active/idle polling, startup refresh, or timer-based request. Keep the last reading's actual age when no new quota arrives.
+  - Claude Code: read at startup and on eligible scheduler ticks with a five-minute minimum gap, in addition to ordinary response updates. Honor backoff and server deadlines; manual retry is available. Keep each reading's actual age when no new quota arrives.
   - Antigravity: the owner approved **configurable, opt-in** refresh using the existing CLI's standalone `/usage` command following a successful bounded validation. Use the reusable activity-aware scheduler with **3 minutes minimum between active polling attempts** and **20 minutes while idle**, with independent backoff. Each attempt starts a process and contacts the backend; no official safe polling threshold has been established. Keep automatic polling disabled until explicitly opted in; never substitute inference or a different authentication flow.
 - Define activity explicitly (e.g. a turn or relevant provider response within the past 10 minutes); do not reset the polling interval on every UI repaint. The 3-minute value is a **minimum gap**, not permission to query endpoints that do not support polling.
 - Track `lastSuccess`, `lastAttempt`, `nextEligibleRefresh`, `inFlight`, and `lastError` per provider.
@@ -188,7 +188,10 @@ Missing fields use independent safe defaults. An empty expansion list means all
 details collapsed, not hidden headers. Minimum intervals are 60 seconds for Codex,
 180/1200 seconds for Antigravity active/idle, and 60 seconds for the configurable
 observation-age threshold. `staleAfterSeconds` controls a local label, never a
-Claude request. Claude's mode is always `response-event`, even if a file requests polling.
+Claude request; each provider's effective label threshold is at least its refresh
+gap plus 60 seconds. Saved expansion lists, including an explicit collapse, are
+respected; collapsed panels show pool windows within the 24-row contribution limit. The legacy `claude.mode` preference remains `response-event` for
+schema compatibility; it does not disable the separately scheduled Claude Code read.
 
 Loading never creates or rewrites the file. Missing `schemaVersion` is compatible
 with schema 1 and is versioned only on explicit save. Malformed, unreadable, or

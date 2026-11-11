@@ -31,7 +31,7 @@ provides the default-disabled CLI adapter, invoked by the refresh runtime when o
 in and eligible. Adapter tests use synthetic payloads and deterministic process and
 timer doubles; no test starts the real CLI.
 
-The `quota-presentation.ts` renderer labels used/remaining values, retains independent pool identities and
+The `quota-presentation.ts` renderer shows remaining values, retains independent pool identities and
 per-window age, explains missing/non-finite data, and bounds rows to Atelier's
 public limits. Its tests cover actual row truncation preserving the leading
 stale/unknown marker; they do not replace a real narrow-terminal smoke test.
@@ -69,10 +69,12 @@ pending and can be combined with the final Phase 5 smoke.
 1. Ensure only one copy is loaded; start Pi without changing providers or credentials.
 2. Open `/atelier`, enable the provider panels in **Settings → Display**, choose
    **Save default**, and verify
-   headings, reported percentages/countdowns, or truthful error labels.
+   headings, remaining percentages/countdowns without a redundant reset label,
+   `(waiting refresh)` where applicable, or truthful error labels.
 3. Use `/subscriptions` to change independent expansion and display preferences;
    hide/reorder panels, resize the terminal, and confirm Atelier remains usable.
-4. Optionally arm `/subscription-debug` before an **already intended** ordinary response.
+4. Check the `/subscriptions` menu's opt-in Antigravity refresh control separately
+   from Atelier Display visibility. Optionally arm `/subscription-debug` before an **already intended** ordinary response.
    Expect only provider/status/header names, no header values, credentials, or prompt text.
 5. Exercise the opt-in and retry controls as appropriate with the owner; exit/restart
    or reload, confirm saved preferences persist and no duplicate panel is loaded.
@@ -86,8 +88,9 @@ are documented separately in [provider discovery](references/provider-discovery.
 
 `extensions/preferences.ts` implements the [schema-1 configuration](PRD.md#6-configuration)
 at `getAgentDir()/subscription-panel.json` (normally `~/.pi/agent/subscription-panel.json`).
-It defaults to remaining percentages, expanded provider details, response-only
-Claude Code, and disabled Antigravity acquisition. The age threshold is local
+It defaults to remaining percentages, expanded provider details, and disabled
+Antigravity acquisition. The legacy Claude response-event preference does not disable
+the separately scheduled Claude Code reader. The age threshold is local
 presentation state, not a quota-request interval.
 
 Loading never writes. Explicit saves use an exclusive temporary file and atomic
@@ -100,26 +103,48 @@ saves these preferences; real TUI persistence remains to be verified.
 ## Refresh behavior and limitations
 
 The scheduler checks eligibility at TUI startup and on a minute-scale tick, with
-minimum attempt gaps of 60 seconds for Codex and 30 minutes for native Anthropic.
+minimum attempt gaps of 60 seconds for Codex, five minutes for Claude Code, and 30 minutes for native Anthropic.
 Antigravity is disabled by default; `/subscriptions refresh antigravity on` opts in
 and `off` disables it. Its minimum gaps are three minutes after relevant recent
 activity and 20 minutes when idle. Ordinary provider responses, not UI repaint,
 record activity for ten minutes. Countdown rendering updates locally every minute.
 HTTP 429 and recoverable failures apply backoff and honor server `Retry-After`.
 
-This native Anthropic baseline is separate from the implemented
-Claude Code behavior: update from every ordinary response carrying valid quota
-metadata, with no extra/scheduled query or three-minute throttle. Missing data
-keeps the previous observation's real age; reset countdowns update locally.
+This native Anthropic baseline is separate from Claude Code: its startup and
+scheduled read uses only the existing Claude Code credential file, with no token
+refresh or credential fallback. Ordinary responses carrying valid quota metadata
+still update immediately; newer passive windows win over an in-flight read and defer
+the next one. Missing data keeps the previous observation's real age; countdowns update locally.
 See [the canonical refresh policy](PRD.md#5-refresh-policy) for provider-specific rules.
 
 - Native `anthropic` OAuth reporting is separate from Claude Code. A 401/403 or
   unavailable authentication blocks automated retries; indeterminate Antigravity
-  errors do likewise. `/subscriptions retry codex|anthropic|antigravity` (choose one
+  errors do likewise. `/subscriptions retry codex|claude-code|anthropic|antigravity` (choose one
   provider) clears a block when enabled, subject to gaps and server deadlines; a
   deferred retry runs on an eligible later tick. Repaint, expansion and reload do
   not intentionally clear blocks. After account changes, reload and explicitly retry
   as appropriate; automatic account detection is not guaranteed.
+- `/subscriptions status` reports the registry's retained, sanitized scheduling
+  metadata without any request, credential access or persistence. The reload
+  "deferred" panel state uses the same data: the last failure (allowlisted reason
+  and validated HTTP status) and the effective cause, the latest future deadline
+  with ties resolved server deadline, then backoff, then minimum gap. A retired
+  controller's late failure keeps only that metadata; a late success keeps nothing.
+  Legacy failures without a retained safe reason, including blocked failures, are
+  reported as unknown. Status prioritizes a manual-retry block over deadline
+  eligibility; the listed deadlines still constrain the retry. A later success
+  clears the failure, backoff and server deadline. Validation here
+  is mocked; a real 4xx/5xx after reload is not exercised against production.
+- After a reload the last successful Codex and Claude Code readings are shown again
+  from process memory (original observation times, no request, gaps unchanged) when
+  the authentication context is provably the same; otherwise nothing is restored.
+  Antigravity is restored the same way under an owner-approved single-account-per-
+  process assumption (not a verified identity) and only while opted in; disabling it
+  discards the entry, and switching accounts requires closing and reopening Pi.
+  Entries are bounded (16 entries, 32 windows, 60 minutes), never persisted and never
+  shared across processes. Native Anthropic is not retained. Mocked
+  loader tests (`test/quota-memory.test.cjs`) reload the module graph in a shared
+  realm; real Pi `/reload` behavior and the production TUI remain unverified.
 - `/subscriptions refresh collapsed off` pauses acquisition for collapsed providers;
   `on` (the default) keeps it enabled. This policy is independent of expansion and
   preserves backoff. Preference changes do not directly issue reads.
@@ -149,5 +174,6 @@ current dependency tree or UI:
 - npm also warned about deprecated `node-domexception` and unapproved lifecycle
   scripts in `@google/genai` and `protobufjs`; no extra script approval was granted.
 
-See [PROVENANCE.md](PROVENANCE.md) for release blockers. No npm publish or release
-workflow is enabled in this phase.
+See [PROVENANCE.md](PROVENANCE.md) for distribution status. No npm publish or release
+workflow is enabled; the package stays `private` until npm publication is explicitly
+requested.
