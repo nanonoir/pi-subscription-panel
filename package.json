@@ -41,7 +41,7 @@
     "check": "npm run format:check && npm run lint && npm run typecheck && npm test"
   },
   "dependencies": {
-    "pi-atelier": "^0.18.0"
+    "pi-atelier": "^0.19.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
